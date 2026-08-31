@@ -39,6 +39,19 @@ jobs:
           path: app
           fetch-depth: 1
 
+      # build_version 会拼进 git tag / Release 名, 直接使用用户输入时,
+      # 含空格或非法字符(如 "0.4.0 test")会让 Release 步骤失败。
+      # 这里消毒成合法 ref/tag 字符集 [A-Za-z0-9._-], 非法字符统一替换为 "-"。
+      - name: Sanitize build version
+        id: version
+        run: |
+          RAW="${{ github.event.inputs.build_version }}"
+          CLEAN="$(printf '%s' "$RAW" | sed -e 's/[[:space:]]*$//' -e 's/^[[:space:]]*//' -e 's/[^A-Za-z0-9._-]/-/g')"
+          CLEAN="${CLEAN:-0.2.1beta}"
+          echo "raw build_version  : $RAW"
+          echo "clean build_version: $CLEAN"
+          echo "build_version=$CLEAN" >> "$GITHUB_OUTPUT"
+
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -105,7 +118,7 @@ jobs:
       - name: Stamp package version into About view
         working-directory: sdk/package/luci-app-mtk-easymesh
         run: |
-          sed -i "s/var PKG_VERSION = '.*';/var PKG_VERSION = '${{ github.event.inputs.build_version }}';/" \
+          sed -i "s/var PKG_VERSION = '.*';/var PKG_VERSION = '${{ steps.version.outputs.build_version }}';/" \
             htdocs/luci-static/resources/view/easymesh/about.js
           grep -n "PKG_VERSION =" htdocs/luci-static/resources/view/easymesh/about.js
 
@@ -146,12 +159,12 @@ jobs:
         if: ${{ !cancelled() && github.event.inputs.upload_release == 'yes' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: luci-app-mtk-easymesh-${{ github.event.inputs.build_version }}
-          name: luci-app-mtk-easymesh ${{ github.event.inputs.build_version }}
+          tag_name: luci-app-mtk-easymesh-${{ steps.version.outputs.build_version }}
+          name: luci-app-mtk-easymesh ${{ steps.version.outputs.build_version }}
           body: |
             ## luci-app-mtk-easymesh — MTK EasyMesh (MAP / wapp) 面板
 
-            - 版本: ${{ github.event.inputs.build_version }}
+            - 版本: ${{ steps.version.outputs.build_version }}
             - SDK: ImmortalWrt ${{ github.event.inputs.sdk_version }} (mediatek/filogic)
             - 依赖: mtwifi-cfg mtwifi-wapp lua-cjson（需编译mt789x mtwifi闭源固件时添加）
 
