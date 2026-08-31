@@ -103,8 +103,12 @@ function renderTopology(topo) {
 				if (showAll) {
 					sLines.push('%s: %s'.format(_('Interface'), st.ifname || '-'));
 					sLines.push('%s: %s'.format(_('Band'), st.band || '-'));
+					if (st.ip)
+						sLines.push('%s: %s'.format(_('IP'), st.ip));
 				}
-				return nodeBox(st.mac || _('Unknown'), sLines, '#3a9a3a');
+				/* prefer the DHCP hostname as the node title, like the
+				 * legacy luci-app-mtk station list did */
+				return nodeBox(st.hostname || st.mac || _('Unknown'), sLines, '#3a9a3a');
 			});
 			return E('div', {}, [
 				node,
@@ -123,6 +127,23 @@ function renderTopology(topo) {
 					[ '%s: %s dBm'.format(_('RSSI'), st.rssi || '?') ], '#3a9a3a');
 			}))
 		]));
+	}
+
+	/* wireless backhaul (apcli) links, shown as an extra child of this device */
+	var bhLinks = (topo.backhaul || []).filter(function(b) {
+		return b.conn_state == 'Connected';
+	});
+	if (bhLinks.length) {
+		radioNodes.push(treeLevel(bhLinks.map(function(b) {
+			var lines = [
+				'%s: %s'.format(_('Interface'), b.ifname || '-'),
+				'%s: %s'.format(_('SSID'), b.ssid || '-'),
+				'%s: %s'.format(_('BSSID'), b.bssid || '-')
+			];
+			if (b.rssi)
+				lines.push('%s: %s dBm'.format(_('RSSI'), b.rssi));
+			return nodeBox('%s: %s'.format(_('Backhaul'), b.ifname), lines, '#2f6fd0');
+		})));
 	}
 
 	children.push(E('div', {}, [

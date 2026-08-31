@@ -80,8 +80,8 @@ local function kv_set(path, updates)
 	end
 
 	-- append keys that were not present in the file yet
-	for k, v in pairs(pending) do
-		table.insert(out, k .. "=" .. kv_clean(v))
+	for k in pairs(pending) do
+		table.insert(out, k .. "=" .. kv_clean(updates[k]))
 	end
 
 	local content = table.concat(out, "\n") .. "\n"
@@ -148,26 +148,6 @@ local function parse_stainfo(text)
 		end
 	end
 	return stas
-end
-
-local function collect_stas()
-	local all, seen = {}, {}
-	for _, r in ipairs(mtwifi_radios()) do
-		if r.disabled ~= "1" then
-			local ifn = ifname_for_radio(r.name, r.band)
-			local stas = parse_stainfo(exec("iwpriv " .. ifn .. " show stainfo"))
-			for _, s in ipairs(stas) do
-				if not seen[s.mac] then
-					seen[s.mac] = true
-					s.radio = r.name
-					s.ifname = ifn
-					s.band = r.band
-					table.insert(all, s)
-				end
-			end
-		end
-	end
-	return all
 end
 
 -- DeviceRole: 0 = auto, 1 = controller, 2 = agent (mapd_cfg)
@@ -457,6 +437,13 @@ local function v_iface(name)
 	return name
 end
 
+-- wireless backhaul client interfaces look like "apcli0" / "apclix0"
+local function v_apcli(name)
+	name = (name ~= nil and name ~= "") and tostring(name) or "apcli0"
+	if not name:match("^apclix?%d+$") then return nil end
+	return name
+end
+
 local function v_mac(mac)
 	mac = tostring(mac or ""):lower()
 	if not mac:match("^%x%x:%x%x:%x%x:%x%x:%x%x:%x%x$") then return nil end
@@ -493,6 +480,143 @@ end
 
 local function wappctrl(iface, args)
 	return exec(string.format("%s %s %s", WAPPCTRL, iface, args))
+end
+
+-- ---------------------------------------------------------------------------
+-- host name / IP lookup for connected stations (idea from the legacy
+-- luci-app-mtk sta_info controller, which enriched every station with the
+-- DHCP / ARP hints known to the system)
+-- ---------------------------------------------------------------------------
+
+local function host_hints()
+	local ok, hints = pcall(function() return sys.net.host_hints() end)
+	if not ok or type(hints) ~= "table" then return {} end
+	return hints
+end
+
+local function collect_stas()
+	local all, seen = {}, {}
+	local hints = host_hints()
+	for _, r in ipairs(mtwifi_radios()) do
+		if r.disabled ~= "1" then
+			local ifn = ifname_for_radio(r.name, r.band)
+			local stas = parse_stainfo(exec("iwpriv " .. ifn .. " show stainfo"))
+			for _, s in ipairs(stas) do
+				if not seen[s.mac] then
+					seen[s.mac] = true
+					s.radio = r.name
+					s.ifname = ifn
+					s.band = r.band
+					local h = hints[s.mac] or hints[s.mac:lower()]
+					if h then
+						s.hostname = h.name or ""
+						s.ip = h.ipv4 or h.ipv6 or ""
+					end
+					table.insert(all, s)
+				end
+			end
+		end
+	end
+	return all
+end
+
+-- ---------------------------------------------------------------------------
+-- backhaul link handling (ported from the legacy luci-app-mtk apcli_scan /
+-- get_apcli_conn_info controllers, reimplemented on top of iwpriv without
+-- the compiled ioctl helper)
+-- ---------------------------------------------------------------------------
+
+-- trigger a site survey and parse the iwpriv get_site_survey table; the
+-- column offsets are taken from the header line, SSIDs with blanks included
+local function site_survey(iface)
+	if not v_iface(iface) then return nil, "Invalid interface name" end
+	if not fs.access("/sys/class/net/" .. iface) then
+		return nil, "Interface " .. iface .. " does not exist"
+	end
+	run("iwpriv " .. iface .. " set SiteSurvey=0")
+	-- the survey needs a few seconds to complete before the table is read
+	os.execute("sleep 4")
+	local out = exec("iwpriv " .. iface .. " get_site_survey")
+
+	local cols, results = nil, {}
+	for line in out:gmatch("[^\r\n]+") do
+		local has_mac = line:match("%s+%x%x:%x%x:%x%x:%x%x:%x%x:%x%x%s+")
+		if #line > 40 and not has_mac then
+			-- header line: remember the column start of every field
+			local c = {}
+			local function col(pat)
+				local s, e = line:find(pat)
+				if s then c[#c + 1] = { s, e - s } end
+			end
+			col("Ch ")
+			col("SSID")
+			col("BSSID")
+			col("Security")
+			col("Sig%a%al")
+			col("W%-Mode")
+			col("ExtCH")
+			col("WPS")
+			if #c >= 5 then cols = c end
+		elseif cols and has_mac then
+			local entry = {}
+			-- channel, ssid, bssid, security, signal, mode, extch, wps in the
+			-- same order as the header columns found above
+			local order = { "channel", "ssid", "bssid", "security", "rssi", "mode", "extch", "wps" }
+			for i, def in ipairs(cols) do
+				local name = order[i] or ("col" .. i)
+				entry[name] = line:sub(def[1], def[1] + def[2]):gsub("^%s+", ""):gsub("%s+$", "")
+			end
+			if entry.bssid ~= "" and #entry.bssid >= 17 then
+				entry.bssid = entry.bssid:sub(1, 17):upper()
+				entry.rssi = entry.rssi or ""
+				table.insert(results, entry)
+			end
+		end
+	end
+
+	table.sort(results, function(a, b)
+		return (tonumber(a.rssi) or -999) > (tonumber(b.rssi) or -999)
+	end)
+	return results
+end
+
+-- current state of the wireless backhaul client interfaces (apcli*), the
+-- equivalent of the legacy get_apcli_conn_info page data
+local function backhaul_status()
+	local candidates = {}
+	for _, r in ipairs(mtwifi_radios()) do
+		local idx = uci.cursor():get("wireless", r.name, "ifidx") or "0"
+		if r.band == "5g" or r.band == "5G" or r.band == "6g" or r.name:match("_2$") then
+			candidates["apclix" .. idx] = r.name
+		else
+			candidates["apcli" .. idx] = r.name
+		end
+	end
+
+	local out = {}
+	for ifn, radio in pairs(candidates) do
+		local entry = { ifname = ifn, radio = radio, state = "down", ssid = "", bssid = "" }
+		local flags = readfile("/sys/class/net/" .. ifn .. "/flags")
+		local n = flags and tonumber(flags:gsub("%s+", ""), 16)
+		if n then
+			entry.state = (n % 2 == 1) and "up" or "down"
+			local iw = exec("iwconfig " .. ifn .. " 2>/dev/null")
+			entry.ssid = iw:match("ESSID:\"(.*)\"") or ""
+			entry.bssid = (iw:match("Access Point:%s*(%x%x:%x%x:%x%x:%x%x:%x%x:%x%x)") or ""):upper()
+			local sig = iw:match("Signal level[=:]%s*(%-?%d+)")
+			entry.rssi = sig or ""
+			if entry.ssid ~= "" then
+				entry.conn_state = "Connected"
+			else
+				entry.conn_state = "Disconnected"
+				entry.state = "down"
+			end
+		end
+		table.insert(out, entry)
+	end
+
+	table.sort(out, function(a, b) return a.ifname < b.ifname end)
+	return out
 end
 
 -- ---------------------------------------------------------------------------
@@ -606,9 +730,148 @@ local methods = {
 				agent_alid = kv_get(MAP1905, "map_agent_alid") or "",
 				wapp_running = proc_running("wapp"),
 				radios = mtwifi_radios(),
-				stations = collect_stas()
+				stations = collect_stas(),
+				backhaul = backhaul_status()
 			}
 			print(json.stringify(topo))
+		end
+	},
+
+	-- current state of the wireless backhaul (apcli) client links
+	bhStatus = {
+		call = function()
+			print(json.stringify({ ok = true, backhaul = backhaul_status() }))
+		end
+	},
+
+	-- trigger a site survey and return the surrounding networks so the
+	-- backhaul SSID can be picked from a list instead of typed by hand
+	bhScan = {
+		args = { iface = "" },
+		call = function(_args)
+			local args = norm(_args)
+			local iface = v_iface(args.iface)
+			if not iface then
+				print(json.stringify({ ok = false, error = "Invalid interface name" }))
+				return
+			end
+			local results, err = site_survey(iface)
+			if not results then
+				print(json.stringify({ ok = false, error = err }))
+				return
+			end
+			print(json.stringify({ ok = true, iface = iface, results = results }))
+		end
+	},
+
+	-- bring the wireless backhaul client up with the given (or already saved)
+	-- backhaul profile 0 credentials; ported from the legacy apcli_connect
+	-- controller, reimplemented with validated iwpriv calls
+	bhConnect = {
+		args = { iface = "", ssid = "", auth = "", enc = "", key = "" },
+		call = function(_args)
+			local args = norm(_args)
+			local iface = v_apcli(args.iface)
+			if not iface then
+				print(json.stringify({ ok = false, error = "Invalid interface name" }))
+				return
+			end
+
+			-- credentials: use the arguments when given, otherwise fall back
+			-- to the committed backhaul profile 0 in easymesh UCI; every value
+			-- ends up in a shell command line, so all of them pass v_text
+			local cursor = uci.cursor()
+			local function cred(argval, opt)
+				local v = (argval ~= "") and argval
+					or (cursor:get("easymesh", "config", opt) or "")
+				if v == "" then return "" end -- empty enc/key is valid (OPEN)
+				return v_text(v)
+			end
+
+			local ssid = cred(args.ssid, "bh0_ssid")
+			local enc  = cred(args.enc, "bh0_enc")
+			local key  = cred(args.key, "bh0_key")
+
+			-- auth modes understood by the mtwifi apcli driver
+			local auth_modes = {
+				OPEN = true, WPAPSK = true, WPA2PSK = true, WPA3PSK = true,
+				WPAPSKWPA2PSK = true, WPA2PSKWPA3PSK = true
+			}
+			local auth = (args.auth ~= "") and args.auth
+				or (cursor:get("easymesh", "config", "bh0_auth") or "")
+			if auth == "" then auth = "WPA2PSK" end
+			if not auth_modes[auth] then
+				print(json.stringify({ ok = false, error = "Invalid authentication mode" }))
+				return
+			end
+
+			if not ssid or #ssid == 0 then
+				print(json.stringify({ ok = false,
+					error = "No backhaul SSID: save the Backhaul Profile 0 settings first" }))
+				return
+			end
+			if not enc or not key then
+				print(json.stringify({ ok = false, error = "Invalid credentials" }))
+				return
+			end
+
+			-- normalize the encryption default
+			if auth ~= "OPEN" and enc == "" then enc = "AES" end
+
+			-- persist the profile so mapd / 1905d know the credentials too
+			cursor:set("easymesh", "config", "bh0_valid", "1")
+			cursor:set("easymesh", "config", "bh0_ssid", ssid)
+			cursor:set("easymesh", "config", "bh0_auth", auth)
+			cursor:set("easymesh", "config", "bh0_enc", (auth == "OPEN") and "" or enc)
+			cursor:set("easymesh", "config", "bh0_key", (auth == "OPEN") and "" or key)
+			cursor:set("easymesh", "config", "bh_type", "wifi")
+			cursor:commit("easymesh")
+			kv_set(MAPD_CFG, {
+				BhProfile0Valid = "1",
+				BhProfile0Ssid = ssid,
+				BhProfile0AuthMode = auth,
+				BhProfile0EncrypType = (auth == "OPEN") and "" or enc,
+				BhProfile0WpaPsk = (auth == "OPEN") and "" or key
+			})
+			kv_set_1(MAP1905, "bh_type", "wifi")
+
+			-- apply to the driver; every value passed v_text / the whitelist
+			-- above, so the single quoted shell words are safe
+			run("ifconfig " .. iface .. " up")
+			run("iwpriv " .. iface .. " set ApCliEnable=0")
+			run("iwpriv " .. iface .. " set ApCliAuthMode=" .. auth)
+			if auth ~= "OPEN" then
+				run("iwpriv " .. iface .. " set ApCliEncrypType='" .. enc .. "'")
+				run("iwpriv " .. iface .. " set ApCliWPAPSK='" .. key .. "'")
+			end
+			run("iwpriv " .. iface .. " set ApCliSsid='" .. ssid .. "'")
+			run("iwpriv " .. iface .. " set ApCliEnable=1")
+			run("iwpriv " .. iface .. " set ApCliAutoConnect=3")
+
+			print(json.stringify({
+				ok = true,
+				iface = iface,
+				ssid = ssid,
+				auth = auth,
+				persisted = true
+			}))
+		end
+	},
+
+	-- tear the wireless backhaul client down; ported from the legacy
+	-- apcli_disconnect controller
+	bhDisconnect = {
+		args = { iface = "" },
+		call = function(_args)
+			local args = norm(_args)
+			local iface = v_apcli(args.iface)
+			if not iface then
+				print(json.stringify({ ok = false, error = "Invalid interface name" }))
+				return
+			end
+			run("iwpriv " .. iface .. " set ApCliEnable=0")
+			run("ifconfig " .. iface .. " down")
+			print(json.stringify({ ok = true, iface = iface }))
 		end
 	},
 

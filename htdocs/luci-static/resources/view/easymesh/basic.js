@@ -55,6 +55,33 @@ var callSetBhType = rpc.declare({
 	expect: { '': {} }
 });
 
+var callBhScan = rpc.declare({
+	object: 'luci.easymesh',
+	method: 'bhScan',
+	params: [ 'iface' ],
+	expect: { '': {} }
+});
+
+var callBhStatus = rpc.declare({
+	object: 'luci.easymesh',
+	method: 'bhStatus',
+	expect: { '': {} }
+});
+
+var callBhConnect = rpc.declare({
+	object: 'luci.easymesh',
+	method: 'bhConnect',
+	params: [ 'iface', 'ssid', 'auth', 'enc', 'key' ],
+	expect: { '': {} }
+});
+
+var callBhDisconnect = rpc.declare({
+	object: 'luci.easymesh',
+	method: 'bhDisconnect',
+	params: [ 'iface' ],
+	expect: { '': {} }
+});
+
 function showOutput(title, res) {
 	var out = (res && (res.output || res.uri)) || '';
 	var lines = [
@@ -66,6 +93,99 @@ function showOutput(title, res) {
 	lines.push(E('div', { 'class': 'right' },
 		E('button', { 'class': 'cbi-button', 'click': ui.hideModal }, [ _('Dismiss') ])));
 	ui.showModal(title, lines);
+}
+
+/* ---------------------------------------------------------------------- */
+/* backhaul scan (ported from the legacy luci-app-mtk apcli_scan page)     */
+/* ---------------------------------------------------------------------- */
+
+/* map a survey "Security" column like "WPA2PSK/AES" onto the auth modes */
+function authFromSecurity(sec) {
+	sec = sec || '';
+	if (sec.indexOf('WPA3') >= 0 || sec.indexOf('SAE') >= 0) return 'WPA3PSK';
+	if (sec.indexOf('WPA2PSK') >= 0) return 'WPA2PSK';
+	if (sec.indexOf('WPAPSK') >= 0) return 'WPAPSK';
+	if (sec.indexOf('WPA2') >= 0) return 'WPA2PSK';
+	if (sec.indexOf('WPA') >= 0) return 'WPAPSK';
+	return 'OPEN';
+}
+
+/* prefer the 5 GHz radio for a backhaul scan when one is present */
+function pickScanIface(status) {
+	var radios = (status && status.radios) || [];
+	for (var i = 0; i < radios.length; i++)
+		if (radios[i].band == '5g' || radios[i].band == '6g')
+			return 'rax0';
+	return 'ra0';
+}
+
+/* the wireless backhaul client interface matching the radio picked above */
+function pickBhIface(status) {
+	return (pickScanIface(status).indexOf('rax') === 0) ? 'apclix0' : 'apcli0';
+}
+
+function showBhScanModal(iface, onSelect) {
+	ui.showModal(_('Backhaul Scan'), [
+		E('p', {}, _('A site survey is running on %s. This takes a few seconds, please wait.').format(iface))
+	]);
+
+	return L.resolveDefault(callBhScan(iface), {}).then(function(res) {
+		if (!res || res.ok !== true) {
+			ui.showModal(_('Backhaul Scan'), [
+				E('p', { 'class': 'alert-message warning' },
+					(res && res.error) || _('The scan failed or returned no results.')),
+				E('div', { 'class': 'right' },
+					E('button', { 'class': 'cbi-button', 'click': ui.hideModal }, [ _('Dismiss') ]))
+			]);
+			return;
+		}
+
+		var rows = (res.results || []).map(function(ap) {
+			return E('tr', {
+				'class': 'tr',
+				'style': 'cursor:pointer',
+				'click': function() {
+					ui.hideModal();
+					if (onSelect)
+						onSelect(ap);
+				}
+			}, [
+				E('td', { 'class': 'td left' }, ap.ssid || _('(hidden network)')),
+				E('td', { 'class': 'td left' }, ap.bssid || '-'),
+				E('td', { 'class': 'td left' }, ap.channel || '-'),
+				E('td', { 'class': 'td left' }, ap.rssi || '-'),
+				E('td', { 'class': 'td left' }, ap.security || '-')
+			]);
+		});
+
+		ui.showModal(_('Backhaul Scan') + ' (%s)'.format(iface), [
+			E('p', {}, _('Click a network to adopt its SSID and authentication mode.')),
+			rows.length
+				? E('table', { 'class': 'table' }, [
+					E('tr', { 'class': 'tr table-titles' }, [
+						E('th', { 'class': 'th' }, _('SSID')),
+						E('th', { 'class': 'th' }, _('BSSID')),
+						E('th', { 'class': 'th' }, _('Channel')),
+						E('th', { 'class': 'th' }, _('RSSI (dBm)')),
+						E('th', { 'class': 'th' }, _('Security'))
+					]) ].concat(rows))
+				: E('p', {}, _('No networks found.')),
+			E('div', { 'class': 'right' },
+				E('button', { 'class': 'cbi-button', 'click': ui.hideModal }, [ _('Dismiss') ]))
+		]);
+	});
+}
+
+/* one line of backhaul link state per apcli interface */
+function bhStatusText(bh) {
+	var list = (bh && bh.backhaul) || [];
+	if (!list.length)
+		return '-';
+	return list.map(function(b) {
+		if (b.conn_state == 'Connected')
+			return '%s: %s "%s" (%s) %s'.format(b.ifname, _('connected to'), b.ssid || '?', b.bssid || '-', b.rssi ? b.rssi + ' dBm' : '');
+		return '%s: %s'.format(b.ifname, _('disconnected'));
+	}).join('<br />');
 }
 
 function roleText(role) {
@@ -353,7 +473,19 @@ function renderWizardStep(step, v, cfg) {
 			E('div', { 'class': 'cbi-value' }, [
 				E('label', { 'class': 'cbi-value-title' }, [ _('Backhaul SSID') ]),
 				E('div', { 'class': 'cbi-value-field' }, [
-					E('input', { 'type': 'text', 'id': 'wiz-bhssid', 'class': 'cbi-input-text', 'value': v.bh0_ssid })
+					E('input', { 'type': 'text', 'id': 'wiz-bhssid', 'class': 'cbi-input-text', 'value': v.bh0_ssid }),
+					' ',
+					E('button', {
+						'class': 'btn',
+						'click': function() {
+							showBhScanModal(pickScanIface(cfg), function(ap) {
+								var el = document.getElementById('wiz-bhssid');
+								if (el) el.value = ap.ssid || '';
+								var au = document.getElementById('wiz-bhauth');
+								if (au) au.value = authFromSecurity(ap.security);
+							});
+						}
+					}, [ _('Scan...') ])
 				])
 			]),
 			E('div', { 'class': 'cbi-value' }, [
@@ -496,7 +628,8 @@ return view.extend({
 		return Promise.all([
 			uci.load('easymesh'),
 			L.resolveDefault(callGetConfig(), {}),
-			L.resolveDefault(callGetStatus(), {})
+			L.resolveDefault(callGetStatus(), {}),
+			L.resolveDefault(callBhStatus(), {})
 		]);
 	},
 
@@ -523,6 +656,7 @@ return view.extend({
 	render: function(data) {
 		var cfg = data[1] || {};
 		var status = data[2] || {};
+		var bhstatus = data[3] || {};
 		var m, s, o;
 
 		var header = E('div', {}, [ renderStatusCard(cfg, status) ]);
@@ -627,11 +761,100 @@ return view.extend({
 		/* ------------------------------------------------------------------ */
 
 		o = s.taboption('backhaul', form.ListValue, 'bh_type', _('Backhaul Type'),
-			_('How this device connects to the mesh network (bh_type in 1905d.cfg).'));
-		o.value('eth', _('Ethernet backhaul'));
-		o.value('wifi', _('Wireless backhaul'));
-		o.default = 'eth';
-		o.rmempty = false;
+		_('How this device connects to the mesh network (bh_type in 1905d.cfg).'));
+	o.value('eth', _('Ethernet backhaul'));
+	o.value('wifi', _('Wireless backhaul'));
+	o.default = 'eth';
+	o.rmempty = false;
+
+	o = s.taboption('backhaul', form.DummyValue, '_bh_link', _('Backhaul Link State'),
+		_('Current state of the wireless backhaul client interfaces (apcli).'));
+	o.cfgvalue = function() {
+		return bhStatusText(bhstatus);
+	};
+	o.rawhtml = true;
+
+	o = s.taboption('backhaul', form.Button, '_bh_scan', _('Scan for Backhaul Networks'),
+		_('Run a site survey and pick the backhaul SSID from the surrounding networks (ported from the legacy luci-app-mtk).'));
+	o.inputtitle = _('Scan...');
+	o.inputstyle = 'action';
+	o.onclick = function() {
+		showBhScanModal(pickScanIface(status), function(ap) {
+			var el = document.querySelector('input[id$=".bh0_ssid"]');
+			if (el) el.value = ap.ssid || '';
+			var au = document.querySelector('select[id$=".bh0_auth"]');
+			if (au) au.value = authFromSecurity(ap.security);
+			ui.addNotification(null, E('p', {},
+				_('Adopted "%s" (%s). Remember to save & apply.').format(ap.ssid || '', ap.bssid || '-')));
+		});
+	};
+
+	o = s.taboption('backhaul', form.Button, '_bh_connect', _('Connect Wireless Backhaul'),
+		_('Bring the wireless backhaul client (apcli) up with the backhaul profile 0 credentials entered on this page (ported from the legacy luci-app-mtk apcli connect).'));
+	o.inputtitle = _('Connect Backhaul');
+	o.inputstyle = 'apply';
+	o.onclick = function(ev, section_id) {
+		var ssid = (s.formvalue(section_id, 'bh0_ssid') || '').trim();
+		var auth = s.formvalue(section_id, 'bh0_auth') || '';
+		var enc = s.formvalue(section_id, 'bh0_enc') || '';
+		var key = s.formvalue(section_id, 'bh0_key') || '';
+		if (!ssid.length) {
+			ui.addNotification(null, E('p', { 'class': 'alert-message warning' },
+				_('Please enter the backhaul SSID (and passphrase) below first.')));
+			return;
+		}
+		return L.resolveDefault(callBhConnect(pickBhIface(status), ssid, auth, enc, key), {})
+			.then(function(res) {
+				if (res && res.ok) {
+					ui.addNotification(null, E('p', {},
+						_('Backhaul connect issued on %s for "%s". The profile has been saved; the link state above updates after the page reloads.')
+							.format(res.iface, res.ssid || ssid)));
+					setTimeout(function() { location.reload(); }, 3000);
+				}
+				else {
+					ui.addNotification(null, E('p', { 'class': 'alert-message warning' },
+						(res && res.error) || _('The connect failed.')));
+				}
+			});
+	};
+
+	o = s.taboption('backhaul', form.Button, '_bh_disconnect', _('Disconnect Wireless Backhaul'),
+		_('Tear the wireless backhaul client (apcli) connection down (ported from the legacy luci-app-mtk apcli disconnect).'));
+	o.inputtitle = _('Disconnect Backhaul');
+	o.inputstyle = 'reset';
+	o.onclick = function() {
+		return new Promise(function(resolve) {
+			ui.showModal(_('Disconnect Backhaul'), [
+				E('p', {}, _('This disables the apcli backhaul client and brings its interface down. The saved backhaul profile is kept.')),
+				E('div', { 'class': 'right' }, [
+					E('button', {
+						'class': 'btn',
+						'click': function() { ui.hideModal(); resolve(false); }
+					}, [ _('Cancel') ]),
+					' ',
+					E('button', {
+						'class': 'btn cbi-button-negative important',
+						'click': function() { ui.hideModal(); resolve(true); }
+					}, [ _('Disconnect') ])
+				])
+			]);
+		}).then(function(go) {
+			if (!go)
+				return;
+			return L.resolveDefault(callBhDisconnect(pickBhIface(status)), {})
+				.then(function(res) {
+					if (res && res.ok) {
+						ui.addNotification(null, E('p', {},
+							_('Backhaul client %s has been disconnected.').format(res.iface)));
+						setTimeout(function() { location.reload(); }, 1500);
+					}
+					else {
+						ui.addNotification(null, E('p', { 'class': 'alert-message warning' },
+							(res && res.error) || _('The disconnect failed.')));
+					}
+				});
+		});
+	};
 
 		o = s.taboption('backhaul', form.Button, '_set_bh_type', _('Apply Backhaul Type at Runtime'));
 		o.inputtitle = _('Apply Backhaul Type');
