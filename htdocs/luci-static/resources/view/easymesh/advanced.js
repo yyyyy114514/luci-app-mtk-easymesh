@@ -23,16 +23,10 @@ var callApplyConfig = rpc.declare({
 	expect: { '': {} }
 });
 
-var callResetDefault = rpc.declare({
+var callResetPage = rpc.declare({
 	object: 'luci.easymesh',
-	method: 'resetDefault',
-	expect: { '': {} }
-});
-
-var callPbcTrigger = rpc.declare({
-	object: 'luci.easymesh',
-	method: 'pbcTrigger',
-	params: [ 'iface' ],
+	method: 'resetPage',
+	params: [ 'scope' ],
 	expect: { '': {} }
 });
 
@@ -242,13 +236,6 @@ var callDppDevSetCfg = rpc.declare({
 	expect: { '': {} }
 });
 
-var callSetBhType = rpc.declare({
-	object: 'luci.easymesh',
-	method: 'setBhType',
-	params: [ 'type' ],
-	expect: { '': {} }
-});
-
 var callWnmReq = rpc.declare({
 	object: 'luci.easymesh',
 	method: 'wnmReq',
@@ -300,6 +287,37 @@ function roleText(role) {
 		: (role || '-');
 }
 
+/* two-step confirmation for destructive page resets */
+function confirmResetPage(title) {
+	return new Promise(function(resolve) {
+		ui.showModal(title, [
+			E('p', {}, _('This restores all options of this page to their defaults. The change takes effect immediately and the wapp / bs20 daemons are restarted.')),
+			E('p', {}, _('The wireless configuration is not touched. Consider downloading a backup first on the "Backup, Restore and Reset" page.')),
+			E('div', { 'class': 'right' }, [
+				E('button', {
+					'class': 'btn',
+					'click': function() { ui.hideModal(); resolve(false); }
+				}, [ _('Cancel') ]),
+				' ',
+				E('button', {
+					'class': 'btn cbi-button-negative important',
+					'click': function() { ui.hideModal(); resolve(true); }
+				}, [ _('Continue') ])
+			])
+		]);
+	});
+}
+
+function notifyResetResult(res) {
+	if (res && res.ok) {
+		ui.addNotification(null, E('p', {}, _('Page options have been restored to defaults. Reload the page to see the updated values.')));
+		setTimeout(function() { location.reload(); }, 1500);
+	}
+	else {
+		ui.addNotification(null, E('p', {}, _('Reset failed: %s').format((res && res.error) || _('unknown error'))));
+	}
+}
+
 return view.extend({
 	load: function() {
 		return Promise.all([
@@ -333,69 +351,27 @@ return view.extend({
 		var status = data[2] || {};
 		var m, s, o;
 
-		m = new form.Map('easymesh', _('EasyMesh Configurations'),
-			_('Configure MTK EasyMesh (MAP / wapp / bs20) on this device.'));
+		m = new form.Map('easymesh', _('EasyMesh Advanced Settings'),
+			_('Expert level MTK EasyMesh (MAP / wapp / bs20) options. Changing these values may break the MAP feature set, please edit with care.'));
 
 		s = m.section(form.NamedSection, 'config', 'easymesh');
-		s.tab('basic', _('Basic'));
-		s.tab('dpp', _('DPP / Onboarding'));
-		s.tab('advanced', _('Advanced'));
+		s.tab('advanced', _('Steering / MAP'));
 		s.tab('backhaul', _('Backhaul'));
 		s.tab('mapqos', _('Channel Planning / Optimization'));
 		s.tab('device', _('Interfaces / Device Info'));
+		s.tab('dpp', _('DPP / Onboarding'));
 		s.tab('runtime', _('Runtime Tools'));
 		s.tab('status', _('Status'));
 
-		/* ------------------------------------------------------------------ */
-		/* basic                                                               */
-		/* ------------------------------------------------------------------ */
-
-		o = s.taboption('basic', form.Flag, 'enabled', _('Enable EasyMesh'),
-			_('Master switch. When enabled, the wapp / bs20 daemons are started and the radios join the MAP network.'));
-		o.default = o.disabled;
-		o.rmempty = false;
-
-		o = s.taboption('basic', form.ListValue, 'device_mode', _('Device Mode'),
-			_('Written to mapd_cfg "mode": Router (1) keeps DHCP / NAT, Bridge (2) turns the device into a pure MAP bridge.'));
-		o.value('router', _('Router'));
-		o.value('bridge', _('Bridge'));
-		o.default = 'router';
-		o.rmempty = false;
-
-		o = s.taboption('basic', form.DummyValue, '_cur_mode', _('Current Device Mode'));
-		o.cfgvalue = function() {
-			return roleText(cfg.cur_mode);
-		};
-
-		o = s.taboption('basic', form.ListValue, 'device_role', _('Device Role'),
-			_('Written to mapd_cfg "DeviceRole" and 1905d.cfg "map_root": Controller (MAP root), Agent (MAP repeater) or Auto.'));
-		o.value('auto', _('Auto'));
-		o.value('controller', _('Controller'));
-		o.value('agent', _('Agent'));
-		o.default = 'controller';
-		o.rmempty = false;
-
-		o = s.taboption('basic', form.DummyValue, '_cur_role', _('Current Device Role'));
-		o.cfgvalue = function() {
-			return roleText(cfg.cur_role);
-		};
-
-		o = s.taboption('basic', form.Button, '_reset_default', _('Reset EasyMesh Settings to default'));
-		o.inputtitle = _('Load Default Settings');
+		o = s.taboption('advanced', form.Button, '_reset_page', _('Reset this page'),
+			_('Restore all options of the Advanced Settings page to their defaults and restart the daemons. The wireless configuration is not touched.'));
+		o.inputtitle = _('Reset Advanced Settings');
 		o.inputstyle = 'reset';
 		o.onclick = function() {
-			return L.resolveDefault(callResetDefault(), {}).then(function() {
-				location.reload();
-			});
-		};
-
-		o = s.taboption('basic', form.Button, '_pbc', _('PBC On-boarding'),
-			_('Trigger WPS push-button on-boarding for MAP agents.'));
-		o.inputtitle = _('Trigger Wi-Fi On-boarding');
-		o.inputstyle = 'apply';
-		o.onclick = function() {
-			return L.resolveDefault(callPbcTrigger('ra0'), {}).then(function(res) {
-				showOutput(_('Wi-Fi On-boarding (PBC)'), res);
+			return confirmResetPage(_('Reset Advanced Settings')).then(function() {
+				return L.resolveDefault(callResetPage('advanced'), {}).then(function(res) {
+					notifyResetResult(res);
+				});
 			});
 		};
 
@@ -775,7 +751,7 @@ return view.extend({
 		});
 	};
 
-		o = s.taboption('basic', form.Button, '_topology', _('Runtime Topology'));
+		o = s.taboption('runtime', form.Button, '_topology', _('Runtime Topology'));
 		o.inputtitle = _('Display Runtime Topology');
 		o.inputstyle = 'button';
 		o.onclick = function() {
@@ -785,22 +761,6 @@ return view.extend({
 		/* ------------------------------------------------------------------ */
 		/* advanced (steering / roaming / feature switches)                    */
 		/* ------------------------------------------------------------------ */
-
-		o = s.taboption('advanced', form.Flag, 'mesh_sr', _('Mesh SR'),
-			_('Enable mesh seamless roaming (ieee80211r / fast transition) on the radios.'));
-		o.default = o.enabled;
-		o.rmempty = false;
-
-		o = s.taboption('advanced', form.Flag, 'bandsteering', _('Band Steering'),
-			_('Enable band steering on mtwifi radios (synced to wireless UCI).'));
-		o.default = o.enabled;
-		o.rmempty = false;
-
-		o = s.taboption('advanced', form.Value, 'steeringthresold', _('Steering RSSI Threshold'),
-			_('steeringthresold applied to every AP interface (dBm).'));
-		o.datatype = 'integer';
-		o.default = '-65';
-		o.rmempty = false;
 
 		o = s.taboption('advanced', form.Flag, 'steering', _('Steering'),
 			_('Enable MAP steering (SteerEnable in mapd_cfg).'));
@@ -903,23 +863,6 @@ return view.extend({
 		/* backhaul                                                            */
 		/* ------------------------------------------------------------------ */
 
-		o = s.taboption('backhaul', form.ListValue, 'bh_type', _('Backhaul Type'),
-		_('bh_type in 1905d.cfg.'));
-	o.value('eth', _('Ethernet backhaul'));
-	o.value('wifi', _('Wireless backhaul'));
-	o.default = 'eth';
-	o.rmempty = false;
-
-	o = s.taboption('backhaul', form.Button, '_set_bh_type', _('Apply Backhaul Type at Runtime'));
-	o.inputtitle = _('Apply Backhaul Type');
-	o.inputstyle = 'apply';
-	o.onclick = function(ev, section_id) {
-		var t = s.formvalue(section_id, 'bh_type') || 'eth';
-		return L.resolveDefault(callSetBhType(t), {}).then(function(res) {
-			showOutput(_('Apply Backhaul Type'), res);
-		});
-	};
-
 		o = s.taboption('backhaul', form.Value, 'radio_band', _('Radio Band Layout'),
 			_('radio_band in 1905d.cfg: semicolon separated band per radio, e.g. 24G;5G;5G; or 24G;5GH;5GL; for tri-band.'));
 		o.default = '24G;5G;5G;';
@@ -963,7 +906,7 @@ return view.extend({
 		o.default = 'ra0;rax0;apclix0';
 		o.rmempty = false;
 
-		[0, 1, 2].forEach(function(i) {
+		[1, 2].forEach(function(i) {
 			o = s.taboption('backhaul', form.Flag, 'bh%d_valid'.format(i), _('Backhaul Profile %d Active').format(i),
 				_('BhProfile%dValid in mapd_cfg.'.format(i)));
 			o.default = o.disabled;

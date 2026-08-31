@@ -10,37 +10,7 @@ msgstr ""
 msgid "-- auto --"
 msgstr ""
 
-msgid "(恩山论坛)"
-msgstr ""
-
-msgid "AL Interface"
-msgstr ""
-
 msgid "About"
-msgstr ""
-
-msgid "Developer"
-msgstr ""
-
-msgid "Enshan (right.com.cn) Profile"
-msgstr ""
-
-msgid "GitHub Repository"
-msgstr ""
-
-msgid "MTK EasyMesh (MAP / wapp / bs20) configuration for the luci-app-mtk-easymesh package."
-msgstr ""
-
-msgid "Version"
-msgstr ""
-
-msgid "AL MAC"
-msgstr ""
-
-msgid "AP Steering RSSI Threshold"
-msgstr ""
-
-msgid "APSteerRssiTh in mapd_cfg (dBm)."
 msgstr ""
 
 msgid "Add Configurator"
@@ -52,7 +22,7 @@ msgstr ""
 msgid "Add PKEX Code"
 msgstr ""
 
-msgid "Advanced"
+msgid "Additionally clears the plugin-synced wireless settings (band steering, 802.11r, wapp flags). SSID and passwords are kept."
 msgstr ""
 
 msgid "Agent"
@@ -62,6 +32,21 @@ msgid "Agent ALID"
 msgstr ""
 
 msgid "Agent ALID Override"
+msgstr ""
+
+msgid "AL Interface"
+msgstr ""
+
+msgid "AL MAC"
+msgstr ""
+
+msgid "al_inf in 1905d.cfg: fixed AL MAC interface (Wi-Fi interface)."
+msgstr ""
+
+msgid "All EasyMesh options return to defaults, wireless is left untouched."
+msgstr ""
+
+msgid "AP Steering RSSI Threshold"
 msgstr ""
 
 msgid "Applied, but /sbin/startwapp.sh was not found. Is mtwifi-cfg installed?"
@@ -77,6 +62,9 @@ msgid "Apply Chirp Setting"
 msgstr ""
 
 msgid "Apply DPP Chirp Setting"
+msgstr ""
+
+msgid "APSteerRssiTh in mapd_cfg (dBm)."
 msgstr ""
 
 msgid "Ask wapp (mbo steer_sta) to steer this client to a better BSS."
@@ -97,25 +85,13 @@ msgstr ""
 msgid "AutoBHSwitching in mapd_cfg: allow automatic backhaul link switching."
 msgstr ""
 
-msgid "BHSteerTimeout in mapd_cfg (seconds)."
-msgstr ""
-
-msgid "BSS Config Priority"
-msgstr ""
-
-msgid "BTM Disassociation Imminent"
-msgstr ""
-
-msgid "BTM Disassociation Timer"
-msgstr ""
-
-msgid "BTM Request MAC"
-msgstr ""
-
-msgid "BTM Session Information URL"
-msgstr ""
-
 msgid "Backhaul"
+msgstr ""
+
+msgid "Backhaul Authentication"
+msgstr ""
+
+msgid "Backhaul Passphrase"
 msgstr ""
 
 msgid "Backhaul Priority 2.4G"
@@ -148,10 +124,43 @@ msgstr ""
 msgid "Backhaul Profile %d SSID"
 msgstr ""
 
+msgid "Backhaul Profile 0 Active"
+msgstr ""
+
+msgid "Backhaul Profile 0 Authentication"
+msgstr ""
+
+msgid "Backhaul Profile 0 Encryption"
+msgstr ""
+
+msgid "Backhaul Profile 0 Passphrase"
+msgstr ""
+
+msgid "Backhaul Profile 0 Ra ID"
+msgstr ""
+
+msgid "Backhaul Profile 0 SSID"
+msgstr ""
+
+msgid "Backhaul SSID"
+msgstr ""
+
 msgid "Backhaul Steering Timeout"
 msgstr ""
 
 msgid "Backhaul Type"
+msgstr ""
+
+msgid "Backup"
+msgstr ""
+
+msgid "Backup downloaded. Keep the file in a safe place, it can be restored on this page."
+msgstr ""
+
+msgid "Backup failed: %s"
+msgstr ""
+
+msgid "Backup restored and applied. Reloading the page..."
 msgstr ""
 
 msgid "Band"
@@ -166,9 +175,6 @@ msgstr ""
 msgid "BandSwitchTime in mapd_cfg. Leave empty for driver default."
 msgstr ""
 
-msgid "Basic"
-msgstr ""
-
 msgid "BhPriority2G in mapd_cfg: allow 2.4G as backhaul."
 msgstr ""
 
@@ -181,22 +187,25 @@ msgstr ""
 msgid "BhPriority6G in mapd_cfg: allow 6G as backhaul."
 msgstr ""
 
-msgid "BhProfile%dAuthMode in mapd_cfg."
+msgid "BhProfile0AuthMode in mapd_cfg."
 msgstr ""
 
-msgid "BhProfile%dEncrypType in mapd_cfg, e.g. AES / TKIP / CCMP128."
+msgid "BhProfile0EncrypType in mapd_cfg, e.g. AES / TKIP / CCMP128."
 msgstr ""
 
-msgid "BhProfile%dRaID in mapd_cfg."
+msgid "BhProfile0RaID in mapd_cfg."
 msgstr ""
 
-msgid "BhProfile%dSsid in mapd_cfg."
+msgid "BhProfile0Ssid in mapd_cfg."
 msgstr ""
 
-msgid "BhProfile%dValid in mapd_cfg."
+msgid "BhProfile0Valid in mapd_cfg."
 msgstr ""
 
-msgid "BhProfile%dWpaPsk in mapd_cfg."
+msgid "BhProfile0WpaPsk in mapd_cfg."
+msgstr ""
+
+msgid "BHSteerTimeout in mapd_cfg (seconds)."
 msgstr ""
 
 msgid "Bootstrap Generation Channel"
@@ -214,10 +223,10 @@ msgstr ""
 msgid "Bootstrap Generation MAC"
 msgstr ""
 
-msgid "Bootstrap Info"
+msgid "Bootstrap id of the peer for dpp_auth_init."
 msgstr ""
 
-msgid "Bootstrap id of the peer for dpp_auth_init."
+msgid "Bootstrap Info"
 msgstr ""
 
 msgid "Bootstrap information index used by the DPP query / remove buttons below."
@@ -226,40 +235,70 @@ msgstr ""
 msgid "Bootstrapping URI"
 msgstr ""
 
+msgid "br_inf in 1905d.cfg: bridge used by the MAP AL entity."
+msgstr ""
+
 msgid "Bridge"
 msgstr ""
 
 msgid "Bridge Interface"
 msgstr ""
 
-msgid "CU Overload Threshold 2.4G"
+msgid "bs20 daemon"
 msgstr ""
 
-msgid "CU Overload Threshold 5G High"
+msgid "BSS Config Priority"
 msgstr ""
 
-msgid "CU Overload Threshold 5G Low"
+msgid "bss_config_priority: semicolon separated BSS bring-up order (mapd_cfg and 1905d.cfg)."
 msgstr ""
 
-msgid "CU Overload Threshold 6G"
+msgid "BTM Disassociation Imminent"
 msgstr ""
 
-msgid "CUOverloadTh_2G in mapd_cfg (percent)."
+msgid "BTM Disassociation Timer"
 msgstr ""
 
-msgid "CUOverloadTh_5G_H in mapd_cfg (percent)."
+msgid "BTM Request MAC"
 msgstr ""
 
-msgid "CUOverloadTh_5G_L in mapd_cfg (percent)."
+msgid "BTM Session Information URL"
 msgstr ""
 
-msgid "CUOverloadTh_6G in mapd_cfg (percent)."
+msgid "Cancel"
 msgstr ""
 
 msgid "Centralized Steering"
 msgstr ""
 
 msgid "CentralizedSteering in mapd_cfg."
+msgstr ""
+
+msgid "Channel"
+msgstr ""
+
+msgid "Channel Planning"
+msgstr ""
+
+msgid "Channel Planning / Optimization"
+msgstr ""
+
+msgid "Channel Planning Idle Byte Count"
+msgstr ""
+
+msgid "Channel Planning Idle Time"
+msgstr ""
+
+msgid "Channel Planning Init Timeout"
+msgstr ""
+
+msgid "Channel Planning R2"
+msgstr ""
+
+msgid "Channel Planning R2 with Bandwidth"
+msgstr ""
+
+msgid "Channel Planning Scan Valid"
 msgstr ""
 
 msgid "ChPlanningChUtilThresh_24G in mapd_cfg. Leave empty for driver default."
@@ -343,46 +382,22 @@ msgstr ""
 msgid "ChUtil Threshold 6G"
 msgstr ""
 
-msgid "Channel"
-msgstr ""
-
-msgid "Channel Planning"
-msgstr ""
-
-msgid "Channel Planning / Optimization"
-msgstr ""
-
-msgid "Channel Planning Idle Byte Count"
-msgstr ""
-
-msgid "Channel Planning Idle Time"
-msgstr ""
-
-msgid "Channel Planning Init Timeout"
-msgstr ""
-
-msgid "Channel Planning R2"
-msgstr ""
-
-msgid "Channel Planning R2 with Bandwidth"
-msgstr ""
-
-msgid "Channel Planning Scan Valid"
-msgstr ""
-
 msgid "Configurator Curve"
-msgstr ""
-
-msgid "Configurator Key"
 msgstr ""
 
 msgid "Configurator index used by the configurator buttons below. Use * for all entries where supported."
 msgstr ""
 
-msgid "Configure MTK EasyMesh (MAP / wapp / bs20) on this device."
+msgid "Configurator Key"
+msgstr ""
+
+msgid "Confirm reset"
 msgstr ""
 
 msgid "Connected Stations"
+msgstr ""
+
+msgid "Continue"
 msgstr ""
 
 msgid "Controller"
@@ -394,19 +409,76 @@ msgstr ""
 msgid "Controller ALID Override"
 msgstr ""
 
+msgid "Core options for MTK EasyMesh (MAP / wapp / bs20). Expert level options are available on the Advanced Settings page."
+msgstr ""
+
+msgid "CU Overload Threshold 2.4G"
+msgstr ""
+
+msgid "CU Overload Threshold 5G High"
+msgstr ""
+
+msgid "CU Overload Threshold 5G Low"
+msgstr ""
+
+msgid "CU Overload Threshold 6G"
+msgstr ""
+
+msgid "CUOverloadTh_2G in mapd_cfg (percent)."
+msgstr ""
+
+msgid "CUOverloadTh_5G_H in mapd_cfg (percent)."
+msgstr ""
+
+msgid "CUOverloadTh_5G_L in mapd_cfg (percent)."
+msgstr ""
+
+msgid "CUOverloadTh_6G in mapd_cfg (percent)."
+msgstr ""
+
 msgid "Current Device Mode"
 msgstr ""
 
 msgid "Current Device Role"
 msgstr ""
 
+msgid "Current role: %s"
+msgstr ""
+
+msgid "Data Element Chipset Vendor"
+msgstr ""
+
+msgid "Data Element Execution Environment"
+msgstr ""
+
+msgid "Data Element Serial Number"
+msgstr ""
+
+msgid "Data Element Software Version"
+msgstr ""
+
+msgid "Data Element STA Event Path"
+msgstr ""
+
 msgid "DBDC main"
+msgstr ""
+
+msgid "dBm"
 msgstr ""
 
 msgid "DEChipsetVendor in mapd_cfg."
 msgstr ""
 
+msgid "Decrypt Fail Threshold"
+msgstr ""
+
+msgid "decrypt_fail_threshold in 1905d.cfg."
+msgstr ""
+
 msgid "DEExecutionEnv in mapd_cfg."
+msgstr ""
+
+msgid "Delay for the WNM deauth imminent notification (wnmreq2)."
 msgstr ""
 
 msgid "DESerialNumber in mapd_cfg."
@@ -418,7 +490,49 @@ msgstr ""
 msgid "DEStaConEventPath in mapd_cfg. Leave empty for default."
 msgstr ""
 
+msgid "Developer"
+msgstr ""
+
+msgid "Device Mode"
+msgstr ""
+
+msgid "Device Role"
+msgstr ""
+
 msgid "DHCP Control"
+msgstr ""
+
+msgid "DhcpCtl in mapd_cfg: controller-side DHCP handling for agents."
+msgstr ""
+
+msgid "disabled"
+msgstr ""
+
+msgid "Disabled"
+msgstr ""
+
+msgid "Disassociation timer in TBTT units."
+msgstr ""
+
+msgid "Dismiss"
+msgstr ""
+
+msgid "Display Bootstrapping URI"
+msgstr ""
+
+msgid "Display Runtime Topology"
+msgstr ""
+
+msgid "Divergent Channel Planning"
+msgstr ""
+
+msgid "DivergentChPlanning in mapd_cfg."
+msgstr ""
+
+msgid "Download Backup"
+msgstr ""
+
+msgid "Download the current EasyMesh configuration (/etc/config/easymesh) as a plain UCI text file."
 msgstr ""
 
 msgid "DPP / Onboarding"
@@ -457,61 +571,34 @@ msgstr ""
 msgid "DPP URI"
 msgstr ""
 
-msgid "Data Element Chipset Vendor"
-msgstr ""
-
-msgid "Data Element Execution Environment"
-msgstr ""
-
-msgid "Data Element STA Event Path"
-msgstr ""
-
-msgid "Data Element Serial Number"
-msgstr ""
-
-msgid "Data Element Software Version"
-msgstr ""
-
-msgid "Decrypt Fail Threshold"
-msgstr ""
-
-msgid "Delay for the WNM deauth imminent notification (wnmreq2)."
-msgstr ""
-
-msgid "Device Mode"
-msgstr ""
-
-msgid "Device Role"
-msgstr ""
-
-msgid "DhcpCtl in mapd_cfg: controller-side DHCP handling for agents."
-msgstr ""
-
-msgid "Disabled"
-msgstr ""
-
-msgid "Disassociation timer in TBTT units."
-msgstr ""
-
-msgid "Dismiss"
-msgstr ""
-
-msgid "Display Bootstrapping URI"
-msgstr ""
-
-msgid "Display Runtime Topology"
-msgstr ""
-
-msgid "Divergent Channel Planning"
-msgstr ""
-
-msgid "DivergentChPlanning in mapd_cfg."
-msgstr ""
-
 msgid "Dual Backhaul"
 msgstr ""
 
 msgid "DualBH in mapd_cfg. Leave empty to disable dual backhaul."
+msgstr ""
+
+msgid "EasyMesh Advanced Settings"
+msgstr ""
+
+msgid "EasyMesh Backup, Restore and Reset"
+msgstr ""
+
+msgid "EasyMesh Basic Settings"
+msgstr ""
+
+msgid "EasyMesh configuration applied, wapp / bs20 have been restarted."
+msgstr ""
+
+msgid "EasyMesh has been disabled. Note: band steering and 802.11r are also disabled on the radios to keep wapp stopped."
+msgstr ""
+
+msgid "EasyMesh Run-time Topology Display"
+msgstr ""
+
+msgid "EasyMesh Setup Wizard"
+msgstr ""
+
+msgid "EasyMesh Topology"
 msgstr ""
 
 msgid "EDCCA Threshold 2.4G"
@@ -523,22 +610,7 @@ msgstr ""
 msgid "EDCCA Threshold 6G"
 msgstr ""
 
-msgid "EasyMesh"
-msgstr ""
-
-msgid "EasyMesh Configurations"
-msgstr ""
-
-msgid "EasyMesh Run-time Topology Display"
-msgstr ""
-
-msgid "EasyMesh Topology"
-msgstr ""
-
-msgid "EasyMesh configuration applied, wapp / bs20 have been restarted."
-msgstr ""
-
-msgid "EasyMesh has been disabled. Note: band steering and 802.11r are also disabled on the radios to keep wapp stopped."
+msgid "Enable band steering on mtwifi radios (synced to wireless UCI)."
 msgstr ""
 
 msgid "Enable DPP Presence Announcement"
@@ -553,40 +625,61 @@ msgstr ""
 msgid "Enable MAP steering (SteerEnable in mapd_cfg)."
 msgstr ""
 
-msgid "Enable Presence Announcement"
-msgstr ""
-
-msgid "Enable Reconfiguration"
-msgstr ""
-
-msgid "Enable band steering on mtwifi radios (synced to wireless UCI)."
-msgstr ""
-
 msgid "Enable mesh seamless roaming (ieee80211r / fast transition) on the radios."
 msgstr ""
 
 msgid "Enable or disable DPP chirp on the channel list below."
 msgstr ""
 
+msgid "Enable Presence Announcement"
+msgstr ""
+
+msgid "Enable Reconfiguration"
+msgstr ""
+
 msgid "Enabled"
 msgstr ""
 
-msgid "Ethernet Device Name"
+msgid "enabled"
+msgstr ""
+
+msgid "Enshan (right.com.cn) Profile"
 msgstr ""
 
 msgid "Ethernet backhaul"
 msgstr ""
 
+msgid "Ethernet Device Name"
+msgstr ""
+
+msgid "ethernet_dev_name in 1905d.cfg: ethernet device used to read the switch table. Leave empty unless you know what it does."
+msgstr ""
+
+msgid "Expert level MTK EasyMesh (MAP / wapp / bs20) options. Changing these values may break the MAP feature set, please edit with care."
+msgstr ""
+
 msgid "External Role Detection"
+msgstr ""
+
+msgid "Final confirmation: the reset runs now and takes effect immediately."
+msgstr ""
+
+msgid "Finish and apply"
 msgstr ""
 
 msgid "Force Roam RSSI Threshold"
 msgstr ""
 
+msgid "force_roam_rssi_th in mapd_cfg (dBm)."
+msgstr ""
+
 msgid "Frequency for the DPP listen command, e.g. 2412 / 5180."
 msgstr ""
 
-msgid "GTK Rekey Interval"
+msgid "Full Reset (including wireless)"
+msgstr ""
+
+msgid "General"
 msgstr ""
 
 msgid "Generate Bootstrapping URI"
@@ -598,13 +691,25 @@ msgstr ""
 msgid "Get Configurator Key"
 msgstr ""
 
+msgid "GitHub Repository"
+msgstr ""
+
+msgid "GTK Rekey Interval"
+msgstr ""
+
+msgid "gtk_rekey_interval in 1905d.cfg (seconds)."
+msgstr ""
+
+msgid "Guided setup for the most common EasyMesh options. It writes the same options as the form on this page."
+msgstr ""
+
 msgid "Hide detailed info"
 msgstr ""
 
-msgid "IPv4"
+msgid "How this device connects to the mesh network (bh_type in 1905d.cfg)."
 msgstr ""
 
-msgid "IPv6"
+msgid "How this device connects to the mesh network."
 msgstr ""
 
 msgid "Initiate Authentication"
@@ -619,10 +724,16 @@ msgstr ""
 msgid "Interfaces / Device Info"
 msgstr ""
 
+msgid "IPv4"
+msgstr ""
+
+msgid "IPv6"
+msgstr ""
+
 msgid "LAN Interface"
 msgstr ""
 
-msgid "Load Default Settings"
+msgid "lan_interface in mapd_cfg."
 msgstr ""
 
 msgid "Low RSSI Steering Edge"
@@ -637,13 +748,22 @@ msgstr ""
 msgid "LowRSSIAPSteerEdge_root in mapd_cfg. Leave empty for driver default."
 msgstr ""
 
-msgid "MAP Version"
-msgstr ""
-
 msgid "MAP version"
 msgstr ""
 
+msgid "MAP Version"
+msgstr ""
+
+msgid "map_agent_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically."
+msgstr ""
+
+msgid "map_controller_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically."
+msgstr ""
+
 msgid "MAP_QuickChChange in mapd_cfg."
+msgstr ""
+
+msgid "map_ver in 1905d.cfg. Wrong values may break the MAP feature set, change with care."
 msgstr ""
 
 msgid "Master switch. When enabled, the wapp / bs20 daemons are started and the radios join the MAP network."
@@ -653,6 +773,9 @@ msgid "Max Allowed Scan"
 msgstr ""
 
 msgid "MaxAllowedScan in mapd_cfg. Leave empty for driver default."
+msgstr ""
+
+msgid "Mesh seamless roaming (802.11r fast transition) on the radios."
 msgstr ""
 
 msgid "Mesh SR"
@@ -665,6 +788,39 @@ msgid "MetricRepIntv in mapd_cfg (seconds)."
 msgstr ""
 
 msgid "Mode"
+msgstr ""
+
+msgid "MTK EasyMesh (MAP / wapp / bs20) configuration for the luci-app-mtk-easymesh package."
+msgstr ""
+
+msgid "NetOptUserSetPriority in mapd_cfg."
+msgstr ""
+
+msgid "Network Optimization"
+msgstr ""
+
+msgid "NetworkOptimizationEnabled in mapd_cfg."
+msgstr ""
+
+msgid "NetworkOptimizationScoreMargin in mapd_cfg."
+msgstr ""
+
+msgid "NetworkOptPrefer5Gover2G in mapd_cfg."
+msgstr ""
+
+msgid "NetworkOptPrefer5Gover2GRetryCnt in mapd_cfg."
+msgstr ""
+
+msgid "Next"
+msgstr ""
+
+msgid "No stations associated."
+msgstr ""
+
+msgid "Non-MAP AP Support"
+msgstr ""
+
+msgid "NonMAPAPEnable in mapd_cfg: allow non-MAP APs in the network."
 msgstr ""
 
 msgid "NOP Bootup Wait"
@@ -685,43 +841,16 @@ msgstr ""
 msgid "NOP Post-CAC Trigger"
 msgstr ""
 
-msgid "NOP Prefer 5G Retry Count"
+msgid "NOP Prefer 5G over 2G"
 msgstr ""
 
-msgid "NOP Prefer 5G over 2G"
+msgid "NOP Prefer 5G Retry Count"
 msgstr ""
 
 msgid "NOP Score Margin"
 msgstr ""
 
 msgid "NOP User Priority"
-msgstr ""
-
-msgid "NetOptUserSetPriority in mapd_cfg."
-msgstr ""
-
-msgid "Network Optimization"
-msgstr ""
-
-msgid "NetworkOptPrefer5Gover2G in mapd_cfg."
-msgstr ""
-
-msgid "NetworkOptPrefer5Gover2GRetryCnt in mapd_cfg."
-msgstr ""
-
-msgid "NetworkOptimizationEnabled in mapd_cfg."
-msgstr ""
-
-msgid "NetworkOptimizationScoreMargin in mapd_cfg."
-msgstr ""
-
-msgid "No stations associated."
-msgstr ""
-
-msgid "Non-MAP AP Support"
-msgstr ""
-
-msgid "NonMAPAPEnable in mapd_cfg: allow non-MAP APs in the network."
 msgstr ""
 
 msgid "NtwrkOptBootupWaitTime in mapd_cfg (seconds)."
@@ -742,6 +871,9 @@ msgstr ""
 msgid "NtwrkOptPostCACTriggerTime in mapd_cfg (seconds)."
 msgstr ""
 
+msgid "ob_wan_only in 1905d.cfg: restrict onboarding traffic to the WAN interface."
+msgstr ""
+
 msgid "OBSS Threshold 2.4G"
 msgstr ""
 
@@ -760,10 +892,7 @@ msgstr ""
 msgid "Open"
 msgstr ""
 
-msgid "Optional DSCP exception for the QoS map configure command."
-msgstr ""
-
-msgid "Optional DSCP range for the QoS map configure command."
+msgid "Operation failed: %s"
 msgstr ""
 
 msgid "Optional chan= parameter for the bootstrap generation, e.g. 81 or 1."
@@ -776,6 +905,12 @@ msgid "Optional curve= parameter when adding a configurator, e.g. P-256."
 msgstr ""
 
 msgid "Optional curve= parameter, e.g. P-256 / P-384."
+msgstr ""
+
+msgid "Optional DSCP exception for the QoS map configure command."
+msgstr ""
+
+msgid "Optional DSCP range for the QoS map configure command."
 msgstr ""
 
 msgid "Optional human readable info= parameter stored in the bootstrap information."
@@ -796,6 +931,15 @@ msgstr ""
 msgid "Optional session information URL."
 msgstr ""
 
+msgid "Page options have been restored to defaults. Reload the page to see the updated values."
+msgstr ""
+
+msgid "Paste a DPP bootstrap URI (QR code) and submit it to wapp via wappctrl."
+msgstr ""
+
+msgid "Path of the MAP WTS file for dpp_dev_set_cfg."
+msgstr ""
+
 msgid "PBC On-boarding"
 msgstr ""
 
@@ -805,22 +949,13 @@ msgstr ""
 msgid "PKEX code to register for password based DPP bootstrapping."
 msgstr ""
 
-msgid "PSC Channel on 6G"
-msgstr ""
-
-msgid "Paste a DPP bootstrap URI (QR code) and submit it to wapp via wappctrl."
-msgstr ""
-
-msgid "Path of the MAP WTS file for dpp_dev_set_cfg."
+msgid "Please enter a configuration file path first."
 msgstr ""
 
 msgid "Please enter a DPP URI first."
 msgstr ""
 
 msgid "Please enter a PKEX code first."
-msgstr ""
-
-msgid "Please enter a configuration file path first."
 msgstr ""
 
 msgid "Please enter a station MAC address first."
@@ -841,10 +976,16 @@ msgstr ""
 msgid "Preferred Channels 6G"
 msgstr ""
 
+msgid "Previous"
+msgstr ""
+
 msgid "Proxy ARP Table"
 msgstr ""
 
 msgid "Proxy ARP Table Family"
+msgstr ""
+
+msgid "PSC Channel on 6G"
 msgstr ""
 
 msgid "QoS Map DSCP Exception"
@@ -871,13 +1012,16 @@ msgstr ""
 msgid "R2 Monitor Timeout"
 msgstr ""
 
-msgid "RSSI"
-msgstr ""
-
 msgid "Radio"
 msgstr ""
 
 msgid "Radio Band Layout"
+msgstr ""
+
+msgid "Radio Features"
+msgstr ""
+
+msgid "radio_band in 1905d.cfg: semicolon separated band per radio, e.g. 24G;5G;5G; or 24G;5GH;5GL; for tri-band."
 msgstr ""
 
 msgid "Radios"
@@ -910,22 +1054,64 @@ msgstr ""
 msgid "Remove PKEX Code"
 msgstr ""
 
+msgid "Reset"
+msgstr ""
+
+msgid "Reset Advanced Settings"
+msgstr ""
+
+msgid "Reset Basic Settings"
+msgstr ""
+
+msgid "Reset completed. Reloading the page..."
+msgstr ""
+
 msgid "Reset DPP Config File"
 msgstr ""
 
 msgid "Reset DPP Configuration"
 msgstr ""
 
-msgid "Reset EasyMesh Settings to default"
+msgid "Reset EasyMesh Configuration"
+msgstr ""
+
+msgid "Reset failed: %s"
 msgstr ""
 
 msgid "Reset MAPD Backhaul Config"
 msgstr ""
 
+msgid "Reset this page"
+msgstr ""
+
+msgid "Restore"
+msgstr ""
+
+msgid "Restore all options of the Advanced Settings page to their defaults and restart the daemons. The wireless configuration is not touched."
+msgstr ""
+
+msgid "Restore all options of the Basic Settings page to their defaults and restart the daemons. The wireless configuration is not touched."
+msgstr ""
+
+msgid "Restore and apply"
+msgstr ""
+
+msgid "Restore Backup"
+msgstr ""
+
+msgid "Restore the EasyMesh configuration from \"%s\"?"
+msgstr ""
+
 msgid "Role"
 msgstr ""
 
+msgid "role_detection_external in mapd_cfg."
+msgstr ""
+
 msgid "Router"
+msgstr ""
+
+msgid "RSSI"
 msgstr ""
 
 msgid "Running"
@@ -961,6 +1147,12 @@ msgstr ""
 msgid "Self Configuration"
 msgstr ""
 
+msgid "Send a WNM notification request to this client (wappctrl wnmreq / wnmreq2)."
+msgstr ""
+
+msgid "Send an 802.11 BSS transition management request to this client (wappctrl btmreq)."
+msgstr ""
+
 msgid "Send BTM Request"
 msgstr ""
 
@@ -988,16 +1180,13 @@ msgstr ""
 msgid "Send WNM Request"
 msgstr ""
 
-msgid "Send a WNM notification request to this client (wappctrl wnmreq / wnmreq2)."
-msgstr ""
-
-msgid "Send an 802.11 BSS transition management request to this client (wappctrl btmreq)."
-msgstr ""
-
 msgid "Server URL for the WNM remediation request (wnmreq)."
 msgstr ""
 
 msgid "Set Backhaul to Wi-Fi (DPP)"
+msgstr ""
+
+msgid "Set Device Configuration"
 msgstr ""
 
 msgid "Set DPP Device Configuration"
@@ -1006,13 +1195,22 @@ msgstr ""
 msgid "Set DPP Onboard Type"
 msgstr ""
 
-msgid "Set Device Configuration"
-msgstr ""
-
 msgid "Set Onboard Type"
 msgstr ""
 
 msgid "SetPSCChannel_6G in mapd_cfg: restrict 6G to PSC channels."
+msgstr ""
+
+msgid "Setup Wizard"
+msgstr ""
+
+msgid "Setup wizard failed: %s"
+msgstr ""
+
+msgid "Setup wizard finished, EasyMesh configuration applied."
+msgstr ""
+
+msgid "Show all device info"
 msgstr ""
 
 msgid "Show Bootstrap Info"
@@ -1022,9 +1220,6 @@ msgid "Show DPP Bootstrap Info"
 msgstr ""
 
 msgid "Show Proxy ARP Table"
-msgstr ""
-
-msgid "Show all device info"
 msgstr ""
 
 msgid "Sign Own Bootstrap (Self Config)"
@@ -1051,6 +1246,9 @@ msgstr ""
 msgid "Start GAS Controller"
 msgstr ""
 
+msgid "Start Setup Wizard"
+msgstr ""
+
 msgid "Status"
 msgstr ""
 
@@ -1063,7 +1261,25 @@ msgstr ""
 msgid "Steering"
 msgstr ""
 
+msgid "Steering / MAP"
+msgstr ""
+
 msgid "Steering RSSI Threshold"
+msgstr ""
+
+msgid "steeringthresold applied to every AP interface (dBm)."
+msgstr ""
+
+msgid "Step %d of %d: backhaul connection."
+msgstr ""
+
+msgid "Step %d of %d: device role and mode."
+msgstr ""
+
+msgid "Step %d of %d: radio features."
+msgstr ""
+
+msgid "Step %d of %d: review and apply."
 msgstr ""
 
 msgid "Stop DPP GAS Controller"
@@ -1081,25 +1297,91 @@ msgstr ""
 msgid "Submit DPP URI"
 msgstr ""
 
+msgid "The current configuration is overwritten, mapd_cfg / 1905d.cfg are rewritten and the wapp / bs20 daemons restart. The wireless configuration is synced to the restored settings."
+msgstr ""
+
+msgid "The selected file does not look like an easymesh UCI backup."
+msgstr ""
+
+msgid "The selected file is too large to be a valid backup."
+msgstr ""
+
+msgid "The wireless configuration is not touched. Consider downloading a backup first on the \"Backup, Restore and Reset\" page."
+msgstr ""
+
+msgid "The wizard writes the same options as the form on this page; the Advanced Settings page always shows the same values."
+msgstr ""
+
 msgid "Third Party Connection"
 msgstr ""
 
 msgid "ThirdPartyConnection in mapd_cfg."
 msgstr ""
 
+msgid "This action cannot be undone. Consider downloading a backup first."
+msgstr ""
+
 msgid "This Device"
 msgstr ""
 
-msgid "Trigger WPS push-button on-boarding for MAP agents."
+msgid "This resets every EasyMesh option to its defaults (easymesh UCI, mapd_cfg and 1905d.cfg) and stops the wapp / bs20 daemons. The wireless configuration is not touched."
+msgstr ""
+
+msgid "This resets every EasyMesh option to its defaults, stops the wapp / bs20 daemons and removes the plugin-synced wireless settings (band steering, 802.11r, steeringthresold, wapp flags). Other wireless settings such as SSID and passwords are kept."
+msgstr ""
+
+msgid "This restores all options of this page to their defaults. The change takes effect immediately and the wapp / bs20 daemons are restarted."
 msgstr ""
 
 msgid "Trigger Wi-Fi On-boarding"
 msgstr ""
 
+msgid "Trigger WPS push-button on-boarding for MAP agents."
+msgstr ""
+
+msgid "Two levels of reset are available. Both require a double confirmation and take effect immediately."
+msgstr ""
+
 msgid "Unknown"
 msgstr ""
 
+msgid "unknown error"
+msgstr ""
+
+msgid "Upload a previously downloaded backup file. The configuration is applied immediately and the daemons restart."
+msgstr ""
+
+msgid "Upload and Restore Backup"
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
 msgid "WAN Interface"
+msgstr ""
+
+msgid "wan_interface in mapd_cfg."
+msgstr ""
+
+msgid "wapp daemon"
+msgstr ""
+
+msgid "wapp is not running. Enable EasyMesh and apply the configuration first."
+msgstr ""
+
+msgid "wapp Version Information"
+msgstr ""
+
+msgid "wapp Versions"
+msgstr ""
+
+msgid "wappctrl interface used by the runtime tools below."
+msgstr ""
+
+msgid "Wi-Fi On-boarding (PBC)"
+msgstr ""
+
+msgid "Wireless backhaul"
 msgstr ""
 
 msgid "WNM Deauth Code"
@@ -1123,83 +1405,11 @@ msgstr ""
 msgid "WPA3-PSK (SAE)"
 msgstr ""
 
-msgid "Wi-Fi On-boarding (PBC)"
+msgid "Written to mapd_cfg \"DeviceRole\" and 1905d.cfg \"map_root\": Controller (MAP root), Agent (MAP repeater) or Auto."
 msgstr ""
 
-msgid "Wireless backhaul"
+msgid "Written to mapd_cfg \"mode\": Router (1) keeps DHCP / NAT, Bridge (2) turns the device into a pure MAP bridge."
 msgstr ""
 
-msgid "Written to mapd_cfg "DeviceRole" and 1905d.cfg "map_root": Controller (MAP root), Agent (MAP repeater) or Auto."
-msgstr ""
-
-msgid "Written to mapd_cfg "mode": Router (1) keeps DHCP / NAT, Bridge (2) turns the device into a pure MAP bridge."
-msgstr ""
-
-msgid "al_inf in 1905d.cfg: fixed AL MAC interface (Wi-Fi interface)."
-msgstr ""
-
-msgid "bh_type in 1905d.cfg."
-msgstr ""
-
-msgid "br_inf in 1905d.cfg: bridge used by the MAP AL entity."
-msgstr ""
-
-msgid "bs20 daemon"
-msgstr ""
-
-msgid "bss_config_priority: semicolon separated BSS bring-up order (mapd_cfg and 1905d.cfg)."
-msgstr ""
-
-msgid "decrypt_fail_threshold in 1905d.cfg."
-msgstr ""
-
-msgid "ethernet_dev_name in 1905d.cfg: ethernet device used to read the switch table. Leave empty unless you know what it does."
-msgstr ""
-
-msgid "force_roam_rssi_th in mapd_cfg (dBm)."
-msgstr ""
-
-msgid "gtk_rekey_interval in 1905d.cfg (seconds)."
-msgstr ""
-
-msgid "lan_interface in mapd_cfg."
-msgstr ""
-
-msgid "map_agent_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically."
-msgstr ""
-
-msgid "map_controller_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically."
-msgstr ""
-
-msgid "map_ver in 1905d.cfg. Wrong values may break the MAP feature set, change with care."
-msgstr ""
-
-msgid "ob_wan_only in 1905d.cfg: restrict onboarding traffic to the WAN interface."
-msgstr ""
-
-msgid "radio_band in 1905d.cfg: semicolon separated band per radio, e.g. 24G;5G;5G; or 24G;5GH;5GL; for tri-band."
-msgstr ""
-
-msgid "role_detection_external in mapd_cfg."
-msgstr ""
-
-msgid "steeringthresold applied to every AP interface (dBm)."
-msgstr ""
-
-msgid "wan_interface in mapd_cfg."
-msgstr ""
-
-msgid "wapp Version Information"
-msgstr ""
-
-msgid "wapp Versions"
-msgstr ""
-
-msgid "wapp daemon"
-msgstr ""
-
-msgid "wapp is not running. Enable EasyMesh and apply the configuration first."
-msgstr ""
-
-msgid "wappctrl interface used by the runtime tools below."
+msgid "恩山论坛"
 msgstr ""

@@ -1,10 +1,22 @@
 {
-	"admin/network/easymesh": {
-		"title": "EasyMesh",
+	"admin/network/easymesh/basic": {
+		"title": "EasyMesh Basic Settings",
 		"order": 55,
 		"action": {
 			"type": "view",
-			"path": "easymesh/config"
+			"path": "easymesh/basic"
+		},
+		"depends": {
+			"acl": [ "luci-app-mtk-easymesh" ],
+			"uci": { "easymesh": true }
+		}
+	},
+	"admin/network/easymesh/advanced": {
+		"title": "EasyMesh Advanced Settings",
+		"order": 56,
+		"action": {
+			"type": "view",
+			"path": "easymesh/advanced"
 		},
 		"depends": {
 			"acl": [ "luci-app-mtk-easymesh" ],
@@ -13,7 +25,7 @@
 	},
 	"admin/network/easymesh/topology": {
 		"title": "EasyMesh Topology",
-		"order": 56,
+		"order": 57,
 		"action": {
 			"type": "view",
 			"path": "easymesh/topology"
@@ -23,9 +35,21 @@
 			"uci": { "easymesh": true }
 		}
 	},
+	"admin/network/easymesh/maintenance": {
+		"title": "EasyMesh Backup, Restore and Reset",
+		"order": 58,
+		"action": {
+			"type": "view",
+			"path": "easymesh/maintenance"
+		},
+		"depends": {
+			"acl": [ "luci-app-mtk-easymesh" ],
+			"uci": { "easymesh": true }
+		}
+	},
 	"admin/network/easymesh/about": {
 		"title": "About",
-		"order": 57,
+		"order": 59,
 		"action": {
 			"type": "view",
 			"path": "easymesh/about"

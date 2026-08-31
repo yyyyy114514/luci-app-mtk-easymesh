@@ -336,6 +336,74 @@ local function schema_updates(cursor)
 end
 
 -- ---------------------------------------------------------------------------
+-- page-scoped reset groups
+--
+-- The Basic Settings page owns the master switch, device mode / role, the
+-- radio feature flags (mesh_sr / bandsteering / steeringthresold), the
+-- backhaul type and backhaul profile 0. Everything else in MAP_SCHEMA is
+-- shown on the Advanced Settings page.
+-- ---------------------------------------------------------------------------
+
+local BASIC_DEFAULTS = {
+	enabled          = "0",
+	device_mode      = "router",
+	device_role      = "controller",
+	mesh_sr          = "1",
+	bandsteering     = "1",
+	steeringthresold = "-65",
+}
+
+local function basic_owned(u)
+	if BASIC_DEFAULTS[u] ~= nil then return true end
+	if u == "bh_type" then return true end
+	return u:match("^bh0_") ~= nil
+end
+
+-- reset uci options and their mapd_cfg / 1905d.cfg keys for a given scope
+-- ("basic", "advanced" or "all"); wireless is never touched here
+local function reset_options(cursor, scope)
+	local per_file = {}
+
+	if scope ~= "advanced" then
+		for u, d in pairs(BASIC_DEFAULTS) do
+			cursor:set("easymesh", "config", u, d)
+		end
+		kv_set_1(MAPD_CFG, "DeviceRole", role_map(BASIC_DEFAULTS.device_role))
+		kv_set_1(MAPD_CFG, "mode", "1")
+		kv_set(MAP1905, { map_root = "1", map_agent = "1" })
+	end
+
+	for _, e in ipairs(MAP_SCHEMA) do
+		local owned
+		if scope == "basic" then
+			owned = basic_owned(e.u)
+		elseif scope == "advanced" then
+			owned = not basic_owned(e.u)
+		else
+			owned = true
+		end
+		if owned then
+			cursor:set("easymesh", "config", e.u, e.d)
+			per_file[e.f] = per_file[e.f] or {}
+			per_file[e.f][e.k] = e.d
+		end
+	end
+
+	if scope == "all" then
+		local al = br_mac()
+		if al ~= "" then
+			per_file[MAP1905] = per_file[MAP1905] or {}
+			per_file[MAP1905]["map_controller_alid"] = al
+			per_file[MAP1905]["map_agent_alid"] = al
+		end
+	end
+
+	for file, upd in pairs(per_file) do
+		kv_set(file, upd)
+	end
+end
+
+-- ---------------------------------------------------------------------------
 -- wireless (mtwifi) UCI sync + daemon restart
 -- ---------------------------------------------------------------------------
 
@@ -428,6 +496,51 @@ end
 -- rpc methods
 -- ---------------------------------------------------------------------------
 
+-- push the committed easymesh UCI options into mapd_cfg / 1905d.cfg
+-- and return the values needed for the wireless sync
+local function push_config(cursor)
+	local enabled = cursor:get("easymesh", "config", "enabled") or "0"
+	local role = cursor:get("easymesh", "config", "device_role") or "auto"
+	local mode = cursor:get("easymesh", "config", "device_mode") or "router"
+	local mesh_sr = cursor:get("easymesh", "config", "mesh_sr") or "1"
+	local bandsteering = cursor:get("easymesh", "config", "bandsteering") or "1"
+	local steeringthresold = cursor:get("easymesh", "config", "steeringthresold") or "-65"
+
+	-- mapd_cfg: DeviceRole 0 = auto, 1 = controller, 2 = agent;
+	-- mode is the device mode: 1 = router, 2 = bridge
+	kv_set_1(MAPD_CFG, "DeviceRole", role_map(role))
+	kv_set_1(MAPD_CFG, "mode", (mode == "bridge") and "2" or "1")
+
+	for file, upd in pairs(schema_updates(cursor)) do
+		kv_set(file, upd)
+	end
+
+	-- 1905d.cfg role / ALID handling
+	local upd1905 = {}
+	upd1905["map_agent"] = "1"
+	if role == "controller" then
+		upd1905["map_root"] = "1"
+	elseif role == "agent" then
+		upd1905["map_root"] = "0"
+	end
+	local al = br_mac()
+	local ctrl_alid = kv_clean(cursor:get("easymesh", "config", "ctrl_alid") or "")
+	local agent_alid = kv_clean(cursor:get("easymesh", "config", "agent_alid") or "")
+	if ctrl_alid ~= "" then
+		upd1905["map_controller_alid"] = ctrl_alid
+	elseif al ~= "" then
+		upd1905["map_controller_alid"] = al
+	end
+	if agent_alid ~= "" then
+		upd1905["map_agent_alid"] = agent_alid
+	elseif al ~= "" then
+		upd1905["map_agent_alid"] = al
+	end
+	kv_set(MAP1905, upd1905)
+
+	return enabled, bandsteering, mesh_sr, steeringthresold
+end
+
 local methods = {
 	getConfig = {
 		call = function()
@@ -495,45 +608,185 @@ local methods = {
 	applyConfig = {
 		call = function()
 			local cursor = uci.cursor()
+			local enabled, bandsteering, mesh_sr, steeringthresold = push_config(cursor)
+
+			sync_wireless(cursor, enabled, bandsteering, mesh_sr, steeringthresold)
+			local started = restart_daemons(enabled)
+
+			print(json.stringify({
+				ok = true,
+				enabled = enabled,
+				restarted = (enabled == "1") and started or false
+			}))
+		end
+	},
+
+	-- reset only the options shown on one page ("basic" or "advanced");
+	-- wireless is intentionally left untouched by a page reset
+	resetPage = {
+		args = { scope = "" },
+		call = function(_args)
+			local args = norm(_args)
+			local scope = tostring(args.scope or "")
+			if scope ~= "basic" and scope ~= "advanced" then
+				print(json.stringify({ ok = false, error = "Invalid scope" }))
+				return
+			end
+			local cursor = uci.cursor()
+			reset_options(cursor, scope)
+			cursor:commit("easymesh")
 			local enabled = cursor:get("easymesh", "config", "enabled") or "0"
-			local role = cursor:get("easymesh", "config", "device_role") or "auto"
-			local mode = cursor:get("easymesh", "config", "device_mode") or "router"
-			local mesh_sr = cursor:get("easymesh", "config", "mesh_sr") or "1"
-			local bandsteering = cursor:get("easymesh", "config", "bandsteering") or "1"
-			local steeringthresold = cursor:get("easymesh", "config", "steeringthresold") or "-65"
+			restart_daemons(enabled)
+			print(json.stringify({ ok = true, scope = scope, enabled = enabled }))
+		end
+	},
 
-			-- mapd_cfg: DeviceRole 0 = auto, 1 = controller, 2 = agent;
-			-- mode is the device mode: 1 = router, 2 = bridge
-			kv_set_1(MAPD_CFG, "DeviceRole", role_map(role))
-			kv_set_1(MAPD_CFG, "mode", (mode == "bridge") and "2" or "1")
+	-- reset every easymesh option and mapd / 1905 key to defaults and stop
+	-- the daemons, but leave wireless exactly as it is
+	resetAll = {
+		call = function()
+			local cursor = uci.cursor()
+			reset_options(cursor, "all")
+			cursor:commit("easymesh")
+			restart_daemons("0")
+			print(json.stringify({ ok = true }))
+		end
+	},
 
-			for file, upd in pairs(schema_updates(cursor)) do
-				kv_set(file, upd)
+	backupConfig = {
+		call = function()
+			local content = fs.readfile("/etc/config/easymesh")
+			if not content then
+				print(json.stringify({ ok = false, error = "Cannot read /etc/config/easymesh" }))
+				return
+			end
+			print(json.stringify({ ok = true, content = content }))
+		end
+	},
+
+	restoreConfig = {
+		args = { content = "" },
+		call = function(_args)
+			local args = norm(_args)
+			local content = tostring(args.content or "")
+			if #content == 0 or #content > 65536 then
+				print(json.stringify({ ok = false, error = "Invalid backup content" }))
+				return
+			end
+			if content:find("[%z\1-\8\11\12\14-\31]") then
+				print(json.stringify({ ok = false, error = "Backup contains control characters" }))
+				return
+			end
+			if not content:match("config%s+easymesh") then
+				print(json.stringify({ ok = false, error = "Not an easymesh UCI backup file" }))
+				return
 			end
 
-			-- 1905d.cfg role / ALID handling
-			local upd1905 = {}
-			upd1905["map_agent"] = "1"
-			if role == "controller" then
-				upd1905["map_root"] = "1"
-			elseif role == "agent" then
-				upd1905["map_root"] = "0"
+			local tmp = "/etc/config/easymesh.luci.tmp"
+			if not fs.writefile(tmp, content) or not os.rename(tmp, "/etc/config/easymesh") then
+				print(json.stringify({ ok = false, error = "Failed to write /etc/config/easymesh" }))
+				return
 			end
-			local al = br_mac()
-			local ctrl_alid = kv_clean(cursor:get("easymesh", "config", "ctrl_alid") or "")
-			local agent_alid = kv_clean(cursor:get("easymesh", "config", "agent_alid") or "")
-			if ctrl_alid ~= "" then
-				upd1905["map_controller_alid"] = ctrl_alid
-			elseif al ~= "" then
-				upd1905["map_controller_alid"] = al
-			end
-			if agent_alid ~= "" then
-				upd1905["map_agent_alid"] = agent_alid
-			elseif al ~= "" then
-				upd1905["map_agent_alid"] = al
-			end
-			kv_set(MAP1905, upd1905)
 
+			local cursor = uci.cursor()
+			local enabled, bandsteering, mesh_sr, steeringthresold = push_config(cursor)
+			sync_wireless(cursor, enabled, bandsteering, mesh_sr, steeringthresold)
+			local started = restart_daemons(enabled)
+
+			print(json.stringify({
+				ok = true,
+				enabled = enabled,
+				restarted = (enabled == "1") and started or false
+			}))
+		end
+	},
+
+	-- one-shot apply used by the setup wizard: only the basic page options
+	-- are accepted, every value is strictly validated
+	wizardApply = {
+		args = {
+			enabled = "", device_mode = "", device_role = "",
+			mesh_sr = "", bandsteering = "", steeringthresold = "",
+			bh_type = "", bh0_ssid = "", bh0_auth = "",
+			bh0_enc = "", bh0_key = "", bh0_raid = ""
+		},
+		call = function(_args)
+			local args = norm(_args)
+
+			local function flag(v)
+				if v == "" then return nil end
+				if v == "0" or v == "1" then return v end
+				return false
+			end
+
+			local vals = {}
+			local function take(name, v, ok)
+				if v == "" or v == nil then return true end
+				if ok == nil or ok == false then
+					print(json.stringify({ ok = false, error = "Invalid value for " .. name }))
+					return false
+				end
+				vals[name] = ok
+				return true
+			end
+
+			if not take("enabled", args.enabled, flag(args.enabled)) then return end
+			if not take("mesh_sr", args.mesh_sr, flag(args.mesh_sr)) then return end
+			if not take("bandsteering", args.bandsteering, flag(args.bandsteering)) then return end
+
+			if args.device_mode ~= "" then
+				if args.device_mode ~= "router" and args.device_mode ~= "bridge" then
+					print(json.stringify({ ok = false, error = "Invalid value for device_mode" }))
+					return
+				end
+				vals.device_mode = args.device_mode
+			end
+			if args.device_role ~= "" then
+				if args.device_role ~= "auto" and args.device_role ~= "controller" and args.device_role ~= "agent" then
+					print(json.stringify({ ok = false, error = "Invalid value for device_role" }))
+					return
+				end
+				vals.device_role = args.device_role
+			end
+			if args.steeringthresold ~= "" then
+				local n = args.steeringthresold:match("^-?%d+$")
+				if not n then
+					print(json.stringify({ ok = false, error = "Invalid value for steeringthresold" }))
+					return
+				end
+				vals.steeringthresold = n
+			end
+			if args.bh_type ~= "" then
+				if args.bh_type ~= "eth" and args.bh_type ~= "wifi" then
+					print(json.stringify({ ok = false, error = "Invalid value for bh_type" }))
+					return
+				end
+				vals.bh_type = args.bh_type
+			end
+
+			-- backhaul profile 0 credentials: printable text only
+			for _, opt in ipairs({ "bh0_ssid", "bh0_auth", "bh0_enc", "bh0_key", "bh0_raid" }) do
+				local v = tostring(args[opt] or "")
+				if v ~= "" then
+					if v:find("[%z\1-\31\127\"'\\`$]") or #v > 128 then
+						print(json.stringify({ ok = false, error = "Invalid value for " .. opt }))
+						return
+					end
+					vals[opt] = v
+				end
+			end
+
+			local cursor = uci.cursor()
+			for opt, v in pairs(vals) do
+				cursor:set("easymesh", "config", opt, v)
+			end
+			-- activating a backhaul profile requires the valid flag
+			if vals.bh0_ssid or vals.bh0_auth or vals.bh0_enc or vals.bh0_key or vals.bh0_raid then
+				cursor:set("easymesh", "config", "bh0_valid", "1")
+			end
+			cursor:commit("easymesh")
+
+			local enabled, bandsteering, mesh_sr, steeringthresold = push_config(cursor)
 			sync_wireless(cursor, enabled, bandsteering, mesh_sr, steeringthresold)
 			local started = restart_daemons(enabled)
 

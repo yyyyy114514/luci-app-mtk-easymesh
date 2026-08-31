@@ -11,7 +11,8 @@
 					"dppBootstrapGetUri",
 					"dppBootstrapInfo",
 					"dppConfiguratorGetKey",
-					"wappVersion"
+					"wappVersion",
+					"backupConfig"
 				]
 			},
 			"uci": [ "easymesh", "wireless" ]
@@ -20,6 +21,10 @@
 			"ubus": {
 				"luci.easymesh": [
 					"applyConfig",
+					"resetPage",
+					"resetAll",
+					"restoreConfig",
+					"wizardApply",
 					"resetDefault",
 					"pbcTrigger",
 					"wappReload",

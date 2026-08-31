@@ -18,8 +18,8 @@ return view.extend({
 				E('strong', {}, _('GitHub Repository')),
 				E('br'),
 				E('a', { 'href': 'https://github.com/yyyyy114514/luci-app-mtk-easymesh/', 'target': '_blank' },
-					'https://github.com/yyyyy114514/luci-app-mtk-easymesh/')
-			}),
+				'https://github.com/yyyyy114514/luci-app-mtk-easymesh/')
+		]),
 
 			E('br'),
 
