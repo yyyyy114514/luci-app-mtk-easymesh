@@ -318,6 +318,51 @@ function notifyResetResult(res) {
 	}
 }
 
+/* unapplied changes detection (uci value vs live config file value) */
+function detectDrift(cfg) {
+	if (!cfg || !cfg.live)
+		return null;
+
+	var drifted = [];
+	for (var key in cfg.live) {
+		if (String(cfg[key] != null ? cfg[key] : '') != String(cfg.live[key] != null ? cfg.live[key] : ''))
+			drifted.push(key);
+	}
+
+	if (cfg.device_role && cfg.cur_role && cfg.device_role != 'auto' && cfg.device_role != cfg.cur_role)
+		drifted.push('device_role');
+	if (cfg.device_mode && cfg.cur_mode && cfg.cur_mode != 'unknown' && cfg.device_mode != cfg.cur_mode)
+		drifted.push('device_mode');
+
+	return drifted.length ? drifted : null;
+}
+
+function renderDriftBanner(drifted) {
+	return E('div', { 'class': 'alert-message warning', 'style': 'margin-bottom:12px' }, [
+		E('p', {}, _('Some settings differ from the running configuration: %s').format(drifted.join(', '))),
+		E('p', {}, _('Click "Save & Apply" to push the pending options to mapd_cfg / 1905d.cfg and restart the daemons.'))
+	]);
+}
+
+/* daemon health check after apply */
+function checkDaemonHealth(enabled) {
+	if (enabled != '1')
+		return;
+	setTimeout(function() {
+		L.resolveDefault(callGetStatus(), {}).then(function(status) {
+			if (status && !status.wapp_running)
+				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
+					_('wapp did not come up after the restart. Check that mtwifi-cfg / mtwifi-wapp are installed and the wireless configuration is valid.')));
+		});
+	}, 3000);
+}
+
+/* visual marker for options whose wrong values can break the mesh */
+function markDangerous(o) {
+	o.description = '⚠ ' + o.description;
+	return o;
+}
+
 return view.extend({
 	load: function() {
 		return Promise.all([
@@ -341,6 +386,7 @@ return view.extend({
 					else
 						msg = _('EasyMesh has been disabled. Note: band steering and 802.11r are also disabled on the radios to keep wapp stopped.');
 					ui.addNotification(null, E('p', {}, msg));
+					checkDaemonHealth(res.enabled);
 				});
 			});
 		});
@@ -350,6 +396,8 @@ return view.extend({
 		var cfg = data[1] || {};
 		var status = data[2] || {};
 		var m, s, o;
+
+		var drifted = detectDrift(cfg);
 
 		m = new form.Map('easymesh', _('EasyMesh Advanced Settings'),
 			_('Expert level MTK EasyMesh (MAP / wapp / bs20) options. Changing these values may break the MAP feature set, please edit with care.'));
@@ -863,10 +911,10 @@ return view.extend({
 		/* backhaul                                                            */
 		/* ------------------------------------------------------------------ */
 
-		o = s.taboption('backhaul', form.Value, 'radio_band', _('Radio Band Layout'),
-			_('radio_band in 1905d.cfg: semicolon separated band per radio, e.g. 24G;5G;5G; or 24G;5GH;5GL; for tri-band.'));
-		o.default = '24G;5G;5G;';
-		o.rmempty = false;
+		o = markDangerous(s.taboption('backhaul', form.Value, 'radio_band', _('Radio Band Layout'),
+		_('radio_band in 1905d.cfg: semicolon separated band per radio, e.g. 24G;5G;5G; or 24G;5GH;5GL; for tri-band.')));
+	o.default = '24G;5G;5G;';
+	o.rmempty = false;
 
 		o = s.taboption('backhaul', form.Flag, 'auto_bh_switch', _('Auto Backhaul Switch'),
 			_('AutoBHSwitching in mapd_cfg: allow automatic backhaul link switching.'));
@@ -901,8 +949,8 @@ return view.extend({
 			_('BandSwitchTime in mapd_cfg. Leave empty for driver default.'));
 		o.optional = true;
 
-		o = s.taboption('backhaul', form.Value, 'bss_prio', _('BSS Config Priority'),
-			_('bss_config_priority: semicolon separated BSS bring-up order (mapd_cfg and 1905d.cfg).'));
+		o = markDangerous(s.taboption('backhaul', form.Value, 'bss_prio', _('BSS Config Priority'),
+		_('bss_config_priority: semicolon separated BSS bring-up order (mapd_cfg and 1905d.cfg).')));
 		o.default = 'ra0;rax0;apclix0';
 		o.rmempty = false;
 
@@ -942,6 +990,13 @@ return view.extend({
 		/* ------------------------------------------------------------------ */
 		/* mapqos (channel planning / network optimization)                    */
 		/* ------------------------------------------------------------------ */
+
+		o = s.taboption('mapqos', form.DummyValue, '_mapqos_warning', _('Danger zone'));
+		o.rawhtml = true;
+		o.cfgvalue = function() {
+			return '<div class="alert-message warning">%s</div>'.format(
+				_('The channel planning and network optimization parameters below directly drive the controller decisions. Wrong thresholds can destabilize the whole mesh.'));
+		};
 
 		o = s.taboption('mapqos', form.Flag, 'ch_plan_enable', _('Channel Planning'),
 			_('ChPlanningEnable in mapd_cfg: controller-driven channel planning.'));
@@ -1154,23 +1209,30 @@ return view.extend({
 		/* device (interfaces / 1905d general / data element)                  */
 		/* ------------------------------------------------------------------ */
 
-		o = s.taboption('device', form.Value, 'lan_if', _('LAN Interface'),
-			_('lan_interface in mapd_cfg.'));
+		o = s.taboption('device', form.DummyValue, '_device_warning', _('Danger zone'));
+		o.rawhtml = true;
+		o.cfgvalue = function() {
+			return '<div class="alert-message warning">%s</div>'.format(
+				_('The interface names, ALID overrides and data element fields below must match your hardware layout. Wrong values can break MAP message exchange.'));
+		};
+
+		o = markDangerous(s.taboption('device', form.Value, 'lan_if', _('LAN Interface'),
+		_('lan_interface in mapd_cfg.')));
 		o.default = 'eth0';
 		o.rmempty = false;
 
-		o = s.taboption('device', form.Value, 'wan_if', _('WAN Interface'),
-			_('wan_interface in mapd_cfg.'));
+		o = markDangerous(s.taboption('device', form.Value, 'wan_if', _('WAN Interface'),
+		_('wan_interface in mapd_cfg.')));
 		o.default = 'eth1';
 		o.rmempty = false;
 
-		o = s.taboption('device', form.Value, 'br_inf', _('Bridge Interface'),
-			_('br_inf in 1905d.cfg: bridge used by the MAP AL entity.'));
+		o = markDangerous(s.taboption('device', form.Value, 'br_inf', _('Bridge Interface'),
+		_('br_inf in 1905d.cfg: bridge used by the MAP AL entity.')));
 		o.default = 'br-lan';
 		o.rmempty = false;
 
-		o = s.taboption('device', form.Value, 'al_inf', _('AL Interface'),
-			_('al_inf in 1905d.cfg: fixed AL MAC interface (Wi-Fi interface).'));
+		o = markDangerous(s.taboption('device', form.Value, 'al_inf', _('AL Interface'),
+		_('al_inf in 1905d.cfg: fixed AL MAC interface (Wi-Fi interface).')));
 		o.default = 'ra0';
 		o.rmempty = false;
 
@@ -1178,8 +1240,8 @@ return view.extend({
 			_('ethernet_dev_name in 1905d.cfg: ethernet device used to read the switch table. Leave empty unless you know what it does.'));
 		o.optional = true;
 
-		o = s.taboption('device', form.ListValue, 'map_ver', _('MAP Version'),
-			_('map_ver in 1905d.cfg. Wrong values may break the MAP feature set, change with care.'));
+		o = markDangerous(s.taboption('device', form.ListValue, 'map_ver', _('MAP Version'),
+		_('map_ver in 1905d.cfg. Wrong values may break the MAP feature set, change with care.')));
 		o.value('R1', 'R1');
 		o.value('R2', 'R2');
 		o.value('R3', 'R3');
@@ -1203,13 +1265,13 @@ return view.extend({
 		o.default = o.disabled;
 		o.rmempty = false;
 
-		o = s.taboption('device', form.Value, 'ctrl_alid', _('Controller ALID Override'),
-			_('map_controller_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically.'));
+		o = markDangerous(s.taboption('device', form.Value, 'ctrl_alid', _('Controller ALID Override'),
+		_('map_controller_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically.')));
 		o.optional = true;
 		o.datatype = 'macaddr';
 
-		o = s.taboption('device', form.Value, 'agent_alid', _('Agent ALID Override'),
-			_('map_agent_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically.'));
+		o = markDangerous(s.taboption('device', form.Value, 'agent_alid', _('Agent ALID Override'),
+		_('map_agent_alid in 1905d.cfg. Leave empty to use the br-lan MAC address automatically.')));
 		o.optional = true;
 		o.datatype = 'macaddr';
 
@@ -1484,6 +1546,12 @@ return view.extend({
 			}).join(', ');
 		};
 
-		return m.render();
+		return m.render().then(function(node) {
+			if (drifted) {
+				var banner = renderDriftBanner(drifted);
+				node.insertBefore(banner, node.firstChild);
+			}
+			return node;
+		});
 	}
 });

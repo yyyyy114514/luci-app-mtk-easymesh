@@ -1,5 +1,4 @@
 'use strict';
-'require poll';
 'require rpc';
 'require ui';
 'require view';
@@ -11,6 +10,8 @@ var callGetTopology = rpc.declare({
 });
 
 var showAll = false;
+var autoRefresh = false;
+var refreshTimer = null;
 
 function roleText(role) {
 	return role == 'controller' ? _('Controller')
@@ -28,7 +29,8 @@ function roleColor(role) {
 		: '#808894';
 }
 
-function nodeBox(title, lines, color) {
+/* one node card; no hardcoded background so dark themes keep working */
+function nodeBox(title, lines, color, extraClass) {
 	var kids = [
 		E('div', { 'style': 'font-weight:bold;color:%s;margin-bottom:6px'.format(color) }, title)
 	];
@@ -36,9 +38,17 @@ function nodeBox(title, lines, color) {
 		kids.push(E('div', { 'style': 'font-size:12px;line-height:1.6' }, lines[i]));
 
 	return E('div', {
+		'class': 'easymesh-node' + (extraClass ? ' ' + extraClass : ''),
 		'style': 'display:inline-block;vertical-align:top;margin:6px;padding:10px 14px;' +
-			'border:2px solid %s;border-radius:8px;background:#fff;min-width:190px'.format(color)
+			'border:2px solid %s;border-radius:8px;min-width:190px'.format(color)
 	}, kids);
+}
+
+/* a tree level: children are indented below their parent with a guide line */
+function treeLevel(children) {
+	return E('div', {
+		'style': 'margin:4px 0 4px 18px;padding-left:18px;border-left:2px solid #808894'
+	}, children);
 }
 
 function renderTopology(topo) {
@@ -61,38 +71,68 @@ function renderTopology(topo) {
 		devLines.push('%s: %s'.format(_('Controller ALID'), topo.controller_alid || '-'));
 		devLines.push('%s: %s'.format(_('Agent ALID'), topo.agent_alid || '-'));
 	}
-	children.push(nodeBox(_('This Device'), devLines, color));
+
+	/* group stations by radio so the mesh hierarchy is visible */
+	var stas = topo.stations || [];
+	var stasByRadio = {};
+	var orphans = [];
+	stas.forEach(function(st) {
+		if (st.radio)
+			(stasByRadio[st.radio] = stasByRadio[st.radio] || []).push(st);
+		else
+			orphans.push(st);
+	});
 
 	var radios = topo.radios || [];
-	if (radios.length) {
-		children.push(E('div', { 'style': 'margin:12px 0 4px' }, radios.map(function(r) {
-			var lines = [
-				'%s: %s'.format(_('Band'), r.band || '-'),
-				'%s: %s'.format(_('Channel'), r.channel || '-')
-			];
-			if (showAll)
-				lines.push('%s: %s'.format(_('DBDC main'), r.dbdc_main || '0'));
-			return nodeBox('%s: %s'.format(_('Radio'), r.name), lines, '#808894');
-		})));
+	var radioNodes = radios.map(function(r) {
+		var lines = [
+			'%s: %s'.format(_('Band'), r.band || '-'),
+			'%s: %s'.format(_('Channel'), r.channel || '-')
+		];
+		if (showAll)
+			lines.push('%s: %s'.format(_('DBDC main'), r.dbdc_main || '0'));
+
+		var rStas = stasByRadio[r.name] || [];
+		lines.push('%s: %d'.format(_('Stations'), rStas.length));
+
+		var node = nodeBox('%s: %s'.format(_('Radio'), r.name), lines, '#808894');
+
+		if (rStas.length) {
+			var staNodes = rStas.map(function(st) {
+				var sLines = [ '%s: %s dBm'.format(_('RSSI'), st.rssi || '?') ];
+				if (showAll) {
+					sLines.push('%s: %s'.format(_('Interface'), st.ifname || '-'));
+					sLines.push('%s: %s'.format(_('Band'), st.band || '-'));
+				}
+				return nodeBox(st.mac || _('Unknown'), sLines, '#3a9a3a');
+			});
+			return E('div', {}, [
+				node,
+				treeLevel(staNodes)
+			]);
+		}
+		return E('div', {}, [ node ]);
+	});
+
+	/* stations that could not be mapped to a radio */
+	if (orphans.length) {
+		radioNodes.push(E('div', {}, [
+			nodeBox(_('Unassigned'), [ '%s: %d'.format(_('Stations'), orphans.length) ], '#808894'),
+			treeLevel(orphans.map(function(st) {
+				return nodeBox(st.mac || _('Unknown'),
+					[ '%s: %s dBm'.format(_('RSSI'), st.rssi || '?') ], '#3a9a3a');
+			}))
+		]));
 	}
 
-	var stas = topo.stations || [];
-	children.push(E('h3', { 'style': 'margin-top:16px' },
-		'%s (%d)'.format(_('Connected Stations'), stas.length)));
+	children.push(E('div', {}, [
+		nodeBox(_('This Device'), devLines, color),
+		treeLevel(radioNodes)
+	]));
 
-	if (!stas.length) {
-		children.push(E('div', {}, E('em', {}, _('No stations associated.'))));
-	} else {
-		children.push(E('div', {}, stas.map(function(st) {
-			var lines = [ '%s: %s dBm'.format(_('RSSI'), st.rssi || '?') ];
-			if (showAll) {
-				lines.push('%s: %s'.format(_('Radio'), st.radio || '-'));
-				lines.push('%s: %s'.format(_('Interface'), st.ifname || '-'));
-				lines.push('%s: %s'.format(_('Band'), st.band || '-'));
-			}
-			return nodeBox(st.mac || _('Unknown'), lines, '#3a9a3a');
-		})));
-	}
+	if (!radios.length && !stas.length)
+		children.push(E('div', { 'style': 'margin-top:8px' },
+			E('em', {}, _('No radios or stations detected.'))));
 
 	return E('div', {}, children);
 }
@@ -102,6 +142,14 @@ function update(container) {
 		container.innerHTML = '';
 		container.appendChild(renderTopology(topo));
 	});
+}
+
+function stopAutoRefresh() {
+	if (refreshTimer != null) {
+		clearInterval(refreshTimer);
+		refreshTimer = null;
+	}
+	autoRefresh = false;
 }
 
 return view.extend({
@@ -116,6 +164,32 @@ return view.extend({
 	render: function(topo) {
 		var container = E('div', { 'id': 'easymesh-topology' }, renderTopology(topo));
 
+		var refreshBtn = E('button', {
+			'class': 'cbi-button',
+			'click': function() {
+				return update(container);
+			}
+		}, [ _('Refresh') ]);
+
+		var autoLabel = E('label', { 'style': 'margin-left:12px;cursor:pointer' }, [
+			E('input', {
+				'type': 'checkbox',
+				'change': function(ev) {
+					if (ev.target.checked) {
+						autoRefresh = true;
+						refreshTimer = setInterval(function() {
+							update(container);
+						}, 5000);
+					}
+					else {
+						stopAutoRefresh();
+					}
+				}
+			}),
+			' ',
+			_('Auto refresh (every 5 seconds)')
+		]);
+
 		var toolbar = E('div', { 'style': 'margin-bottom:14px' }, [
 			E('button', {
 				'class': 'cbi-button cbi-button-apply',
@@ -127,22 +201,18 @@ return view.extend({
 				}
 			}, [ _('Show all device info') ]),
 			' ',
-			E('button', {
-				'class': 'cbi-button',
-				'click': function() {
-					return update(container);
-				}
-			}, [ _('Refresh') ])
+			refreshBtn,
+			autoLabel
 		]);
-
-		poll.add(function() {
-			return update(container);
-		});
 
 		return E('div', {}, [
 			E('h2', {}, _('EasyMesh Run-time Topology Display')),
 			toolbar,
 			container
 		]);
+	},
+
+	handleDestroy: function() {
+		stopAutoRefresh();
 	}
 });

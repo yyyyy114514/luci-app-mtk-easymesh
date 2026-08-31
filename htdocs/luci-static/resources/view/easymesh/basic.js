@@ -110,6 +110,127 @@ function notifyResetResult(res) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* status overview card                                                    */
+/* ---------------------------------------------------------------------- */
+
+function statusBadge(ok, okText, badText) {
+	return E('span', {
+		'class': ok ? 'label notice' : 'label',
+		'style': ok ? '' : 'background:#c44;white-space:nowrap'
+	}, ok ? okText : badText);
+}
+
+function renderStatusCard(cfg, status) {
+	status = status || {};
+
+	var rows = [
+		E('tr', { 'class': 'tr' }, [
+			E('td', { 'class': 'td left', 'style': 'width:30%' }, [ E('strong', {}, _('EasyMesh')) ]),
+			E('td', { 'class': 'td left' }, [
+				statusBadge(cfg.enabled == '1', _('enabled'), _('disabled'))
+			])
+		]),
+		E('tr', { 'class': 'tr' }, [
+			E('td', { 'class': 'td left' }, [ E('strong', {}, _('wapp daemon')) ]),
+			E('td', { 'class': 'td left' }, [
+				statusBadge(status.wapp_running, _('running'), _('not running'))
+			])
+		]),
+		E('tr', { 'class': 'tr' }, [
+			E('td', { 'class': 'td left' }, [ E('strong', {}, _('bs20 daemon')) ]),
+			E('td', { 'class': 'td left' }, [
+				statusBadge(status.bs20_running, _('running'), _('not running'))
+			])
+		]),
+		E('tr', { 'class': 'tr' }, [
+			E('td', { 'class': 'td left' }, [ E('strong', {}, _('Current Device Role')) ]),
+			E('td', { 'class': 'td left' }, roleText(status.device_role))
+		]),
+		E('tr', { 'class': 'tr' }, [
+			E('td', { 'class': 'td left' }, [ E('strong', {}, _('MAP version')) ]),
+			E('td', { 'class': 'td left' }, status.map_ver || '-')
+		])
+	];
+
+	var radios = status.radios || [];
+	var radioNames = radios.map(function(r) { return r.name; }).join(', ');
+	rows.push(E('tr', { 'class': 'tr' }, [
+		E('td', { 'class': 'td left' }, [ E('strong', {}, _('Radios')) ]),
+		E('td', { 'class': 'td left' }, radioNames ? '%d (%s)'.format(radios.length, radioNames) : '-')
+	]));
+
+	return E('div', { 'class': 'cbi-section' }, [
+		E('h3', {}, _('Status Overview')),
+		E('table', { 'class': 'table' }, rows)
+	]);
+}
+
+/* ---------------------------------------------------------------------- */
+/* unapplied changes detection (uci value vs live config file value)       */
+/* ---------------------------------------------------------------------- */
+
+function detectDrift(cfg) {
+	if (!cfg || !cfg.live)
+		return null;
+
+	var drifted = [];
+	for (var key in cfg.live) {
+		if (String(cfg[key] != null ? cfg[key] : '') != String(cfg.live[key] != null ? cfg.live[key] : ''))
+			drifted.push(key);
+	}
+
+	if (cfg.device_role && cfg.cur_role && cfg.device_role != 'auto' && cfg.device_role != cfg.cur_role)
+		drifted.push('device_role');
+	if (cfg.device_mode && cfg.cur_mode && cfg.cur_mode != 'unknown' && cfg.device_mode != cfg.cur_mode)
+		drifted.push('device_mode');
+
+	return drifted.length ? drifted : null;
+}
+
+function renderDriftBanner(drifted) {
+	return E('div', { 'class': 'alert-message warning', 'style': 'margin-bottom:12px' }, [
+		E('p', {}, _('Some settings differ from the running configuration: %s').format(drifted.join(', '))),
+		E('p', {}, _('Click "Save & Apply" to push the pending options to mapd_cfg / 1905d.cfg and restart the daemons.'))
+	]);
+}
+
+/* ---------------------------------------------------------------------- */
+/* daemon health check after apply                                         */
+/* ---------------------------------------------------------------------- */
+
+function checkDaemonHealth(enabled, done) {
+	if (enabled != '1') {
+		if (done) done();
+		return;
+	}
+	setTimeout(function() {
+		L.resolveDefault(callGetStatus(), {}).then(function(status) {
+			if (status && !status.wapp_running)
+				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
+					_('wapp did not come up after the restart. Check that mtwifi-cfg / mtwifi-wapp are installed and the wireless configuration is valid.')));
+			if (done) done();
+		});
+	}, 3000);
+}
+
+/* ---------------------------------------------------------------------- */
+/* wizard validation                                                       */
+/* ---------------------------------------------------------------------- */
+
+function validateWizard(v) {
+	if (v.bh_type == 'wifi') {
+		if (!v.bh0_ssid)
+			return _('Please enter the backhaul SSID for wireless backhaul.');
+		if (v.bh0_auth && v.bh0_auth != 'OPEN' && !v.bh0_key)
+			return _('Please enter the backhaul passphrase for the selected authentication mode.');
+	}
+	var th = parseInt(v.steeringthresold, 10);
+	if (isNaN(th) || th > 0 || th < -100)
+		return _('The steering RSSI threshold must be a negative dBm value (e.g. -65).');
+	return null;
+}
+
+/* ---------------------------------------------------------------------- */
 /* setup wizard: a small guided flow that writes the same options as the  */
 /* form below (same source of truth, two-way synced)                      */
 /* ---------------------------------------------------------------------- */
@@ -213,7 +334,14 @@ function renderWizardStep(step, v, cfg) {
 		body.push(E('div', { 'class': 'cbi-value' }, [
 			E('label', { 'class': 'cbi-value-title' }, [ _('Backhaul Type') ]),
 			E('div', { 'class': 'cbi-value-field' }, [
-				E('select', { 'id': 'wiz-bhtype', 'class': 'cbi-input-select' }, [
+				E('select', {
+					'id': 'wiz-bhtype', 'class': 'cbi-input-select',
+					'change': function(ev) {
+						var box = document.getElementById('wiz-bhwifi');
+						if (box)
+							box.style.display = (ev.target.value == 'wifi') ? '' : 'none';
+					}
+				}, [
 					E('option', { 'value': 'eth', 'selected': v.bh_type != 'wifi' ? 'selected' : null }, [ _('Ethernet backhaul') ]),
 					E('option', { 'value': 'wifi', 'selected': v.bh_type == 'wifi' ? 'selected' : null }, [ _('Wireless backhaul') ])
 				]),
@@ -307,6 +435,11 @@ function showWizardStep(step, v, cfg) {
 			'class': 'btn cbi-button-positive important',
 			'click': function() {
 				collectWizardStep(step, v);
+				var err = validateWizard(v);
+				if (err) {
+					ui.addNotification(null, E('p', { 'class': 'alert-message warning' }, err));
+					return;
+				}
 				showWizardStep(step + 1, v, cfg);
 			}
 		}, [ _('Next') ]));
@@ -324,7 +457,9 @@ function showWizardStep(step, v, cfg) {
 					ui.hideModal();
 					if (res && res.ok) {
 						ui.addNotification(null, E('p', {}, _('Setup wizard finished, EasyMesh configuration applied.')));
-						setTimeout(function() { location.reload(); }, 1500);
+						checkDaemonHealth(res.enabled, function() {
+							setTimeout(function() { location.reload(); }, 1000);
+						});
 					}
 					else {
 						ui.addNotification(null, E('p', {}, _('Setup wizard failed: %s').format((res && res.error) || _('unknown error'))));
@@ -379,6 +514,7 @@ return view.extend({
 					else
 						msg = _('EasyMesh has been disabled. Note: band steering and 802.11r are also disabled on the radios to keep wapp stopped.');
 					ui.addNotification(null, E('p', {}, msg));
+					checkDaemonHealth(res.enabled);
 				});
 			});
 		});
@@ -386,7 +522,13 @@ return view.extend({
 
 	render: function(data) {
 		var cfg = data[1] || {};
+		var status = data[2] || {};
 		var m, s, o;
+
+		var header = E('div', {}, [ renderStatusCard(cfg, status) ]);
+		var drifted = detectDrift(cfg);
+		if (drifted)
+			header.appendChild(renderDriftBanner(drifted));
 
 		m = new form.Map('easymesh', _('EasyMesh Basic Settings'),
 			_('Core options for MTK EasyMesh (MAP / wapp / bs20). Expert level options are available on the Advanced Settings page.'));
@@ -532,6 +674,8 @@ return view.extend({
 			_('BhProfile0RaID in mapd_cfg.'));
 		o.optional = true;
 
-		return m.render();
+		return m.render().then(function(node) {
+			return E('div', {}, [ header, node ]);
+		});
 	}
 });

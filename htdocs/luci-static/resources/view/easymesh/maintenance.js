@@ -1,5 +1,6 @@
 'use strict';
 'require rpc';
+'require uci';
 'require ui';
 'require view';
 
@@ -28,6 +29,12 @@ var callResetDefault = rpc.declare({
 	expect: { '': {} }
 });
 
+var callGetStatus = rpc.declare({
+	object: 'luci.easymesh',
+	method: 'getStatus',
+	expect: { '': {} }
+});
+
 function notifyResult(okMsg, res) {
 	if (res && res.ok) {
 		ui.addNotification(null, E('p', {}, okMsg));
@@ -37,6 +44,45 @@ function notifyResult(okMsg, res) {
 		ui.addNotification(null, E('p', { 'class': 'alert-message warning' },
 			_('Operation failed: %s').format((res && res.error) || _('unknown error'))));
 	}
+}
+
+/* daemon health check after restore / apply */
+function checkDaemonHealth(enabled) {
+	if (enabled != '1')
+		return;
+	setTimeout(function() {
+		L.resolveDefault(callGetStatus(), {}).then(function(status) {
+			if (status && !status.wapp_running)
+				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
+					_('wapp did not come up after the restart. Check that mtwifi-cfg / mtwifi-wapp are installed and the wireless configuration is valid.')));
+		});
+	}, 3000);
+}
+
+/* parse "option key 'value'" lines from the backup and compare them
+ * against the current uci configuration */
+function buildRestoreDiff(content) {
+	var backup = {}, cur = {}, keys = {}, k;
+
+	var re = /option\s+([A-Za-z0-9_]+)\s+'([^']*)'/g, m;
+	while ((m = re.exec(content)) != null) {
+		backup[m[1]] = m[2];
+		keys[m[1]] = true;
+	}
+
+	var opts = uci.get('easymesh', 'config') || {};
+	for (k in opts)
+		if (k.charAt(0) != '.')
+			keys[k] = true;
+
+	var rows = [];
+	for (k in keys) {
+		var b = (backup[k] != null) ? backup[k] : '';
+		var c = (opts[k] != null) ? String(opts[k]) : '';
+		if (b != c)
+			rows.push([ k, c || '-', b || '-' ]);
+	}
+	return rows;
 }
 
 function downloadBackup() {
@@ -68,27 +114,57 @@ function downloadBackup() {
 }
 
 function confirmRestore(content, filename) {
-	ui.showModal(_('Restore Backup'), [
+	var legacy = !/^#\s*luci-app-mtk-easymesh backup v[0-9]+/m.test(content);
+
+	var diffRows = buildRestoreDiff(content);
+	var preview;
+	if (diffRows.length) {
+		preview = E('table', { 'class': 'table', 'style': 'max-height:260px;display:block;overflow:auto' }, [
+			E('tr', { 'class': 'tr table-titles' }, [
+				E('th', { 'class': 'th' }, [ _('Option') ]),
+				E('th', { 'class': 'th' }, [ _('Current value') ]),
+				E('th', { 'class': 'th' }, [ _('Backup value') ])
+			]) ].concat(diffRows.map(function(r) {
+				return E('tr', { 'class': 'tr' }, [
+					E('td', { 'class': 'td' }, [ r[0] ]),
+					E('td', { 'class': 'td' }, [ r[1] ]),
+					E('td', { 'class': 'td' }, [ r[2] ])
+				]);
+			})));
+	}
+	else {
+		preview = E('p', {}, E('em', {}, _('The backup is identical to the current configuration.')));
+	}
+
+	var kids = [
 		E('p', {}, _('Restore the EasyMesh configuration from "%s"?').format(filename)),
 		E('p', {}, _('The current configuration is overwritten, mapd_cfg / 1905d.cfg are rewritten and the wapp / bs20 daemons restart. The wireless configuration is synced to the restored settings.')),
-		E('p', {}, E('code', {
-			'style': 'display:block;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all'
-		}, content.substring(0, 2048))),
-		E('div', { 'class': 'right' }, [
-			E('button', { 'class': 'btn', 'click': ui.hideModal }, [ _('Cancel') ]),
-			' ',
-			E('button', {
-				'class': 'btn cbi-button-negative important',
-				'click': function(ev) {
-					ev.target.disabled = true;
-					return L.resolveDefault(callRestoreConfig(content), {}).then(function(res) {
-						ui.hideModal();
-						notifyResult(_('Backup restored and applied. Reloading the page...'), res);
-					});
-				}
-			}, [ _('Restore and apply') ])
-		])
-	]);
+		E('h4', {}, _('Changes compared to the current configuration (%d)').format(diffRows.length)),
+		preview
+	];
+
+	if (legacy)
+		kids.splice(1, 0, E('p', { 'class': 'alert-message warning' },
+			_('This backup has no version header and was created by an older plugin version. It will still be restored.')));
+
+	kids.push(E('div', { 'class': 'right' }, [
+		E('button', { 'class': 'btn', 'click': ui.hideModal }, [ _('Cancel') ]),
+		' ',
+		E('button', {
+			'class': 'btn cbi-button-negative important',
+			'click': function(ev) {
+				ev.target.disabled = true;
+				return L.resolveDefault(callRestoreConfig(content), {}).then(function(res) {
+					ui.hideModal();
+					notifyResult(_('Backup restored and applied. Reloading the page...'), res);
+					if (res && res.ok)
+						checkDaemonHealth(res.enabled);
+				});
+			}
+		}, [ _('Restore and apply') ])
+	]));
+
+	ui.showModal(_('Restore Backup'), kids);
 }
 
 /* first stage of the two-step reset confirmation */
@@ -155,7 +231,7 @@ function doReset(kind) {
 
 return view.extend({
 	load: function() {
-		return Promise.resolve();
+		return uci.load('easymesh');
 	},
 
 	render: function() {

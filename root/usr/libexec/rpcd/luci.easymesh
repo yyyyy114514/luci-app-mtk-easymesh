@@ -13,6 +13,9 @@ local MAP1905   = "/etc/map/1905d.cfg"
 local WAPPCTRL  = "/sbin/wappctrl"
 local STARTWAPP = "/sbin/startwapp.sh"
 
+-- backup file format version written into the backup header
+local BACKUP_VERSION = 1
+
 local function readfile(path)
 	local s = fs.readfile(path)
 	return s and (s:gsub("^%s+", ""):gsub("%s+$", ""))
@@ -554,13 +557,17 @@ local methods = {
 			cfg.bandsteering = cursor:get("easymesh", "config", "bandsteering") or "1"
 			cfg.steeringthresold = cursor:get("easymesh", "config", "steeringthresold") or "-65"
 
+			-- live values as currently present in the config files,
+			-- used by the frontend to detect unapplied changes
+			cfg.live = {}
 			for _, e in ipairs(MAP_SCHEMA) do
 				if cfg[e.u] == nil then
 					cfg[e.u] = cursor:get("easymesh", "config", e.u) or e.d
 				end
+				cfg.live[e.u] = kv_get(e.f, e.k)
+				if cfg.live[e.u] == nil then cfg.live[e.u] = e.d end
 			end
 
-			-- live values as currently present in the config files
 			cfg.cur_mode = current_mode()
 			cfg.cur_role = current_role()
 			cfg.cur_steer_enable = kv_get(MAPD_CFG, "SteerEnable") or ""
@@ -660,7 +667,11 @@ local methods = {
 				print(json.stringify({ ok = false, error = "Cannot read /etc/config/easymesh" }))
 				return
 			end
-			print(json.stringify({ ok = true, content = content }))
+			-- header comment lines are stripped again on restore
+			local header = string.format(
+				"# luci-app-mtk-easymesh backup v%d\n# generated: %s\n",
+				BACKUP_VERSION, os.date("%Y-%m-%d %H:%M:%S"))
+			print(json.stringify({ ok = true, content = header .. content }))
 		end
 	},
 
@@ -677,6 +688,26 @@ local methods = {
 				print(json.stringify({ ok = false, error = "Backup contains control characters" }))
 				return
 			end
+
+			-- strip comment lines (backup header), remember its version
+			local version, lines = nil, {}
+			for line in content:gmatch("[^\r\n]+") do
+				local v = line:match("^%s*#%s*luci%-app%-mtk%-easymesh backup v([0-9]+)")
+				if v then version = tonumber(v) end
+				if not line:match("^%s*#") then
+					table.insert(lines, line)
+				end
+			end
+			content = table.concat(lines, "\n") .. "\n"
+
+			if version and version > BACKUP_VERSION then
+				print(json.stringify({
+					ok = false,
+					error = "Backup was created by a newer plugin version, please update luci-app-mtk-easymesh first."
+				}))
+				return
+			end
+
 			if not content:match("config%s+easymesh") then
 				print(json.stringify({ ok = false, error = "Not an easymesh UCI backup file" }))
 				return
@@ -696,7 +727,8 @@ local methods = {
 			print(json.stringify({
 				ok = true,
 				enabled = enabled,
-				restarted = (enabled == "1") and started or false
+				restarted = (enabled == "1") and started or false,
+				legacy = (version == nil) or nil
 			}))
 		end
 	},
