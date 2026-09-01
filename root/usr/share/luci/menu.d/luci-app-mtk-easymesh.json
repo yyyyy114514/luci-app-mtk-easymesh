@@ -5,10 +5,6 @@
 		"action": {
 			"type": "view",
 			"path": "easymesh/basic"
-		},
-		"depends": {
-			"acl": [ "luci-app-mtk-easymesh" ],
-			"uci": { "easymesh": true }
 		}
 	},
 	"admin/network/easymesh/advanced": {
@@ -17,10 +13,6 @@
 		"action": {
 			"type": "view",
 			"path": "easymesh/advanced"
-		},
-		"depends": {
-			"acl": [ "luci-app-mtk-easymesh" ],
-			"uci": { "easymesh": true }
 		}
 	},
 	"admin/network/easymesh/topology": {
@@ -29,10 +21,6 @@
 		"action": {
 			"type": "view",
 			"path": "easymesh/topology"
-		},
-		"depends": {
-			"acl": [ "luci-app-mtk-easymesh" ],
-			"uci": { "easymesh": true }
 		}
 	},
 	"admin/network/easymesh/maintenance": {
@@ -41,10 +29,6 @@
 		"action": {
 			"type": "view",
 			"path": "easymesh/maintenance"
-		},
-		"depends": {
-			"acl": [ "luci-app-mtk-easymesh" ],
-			"uci": { "easymesh": true }
 		}
 	},
 	"admin/network/easymesh/about": {
@@ -53,10 +37,6 @@
 		"action": {
 			"type": "view",
 			"path": "easymesh/about"
-		},
-		"depends": {
-			"acl": [ "luci-app-mtk-easymesh" ],
-			"uci": { "easymesh": true }
 		}
-	}
+}
 }
