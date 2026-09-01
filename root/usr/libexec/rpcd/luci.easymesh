@@ -10,8 +10,29 @@ local uci  = require "luci.model.uci"
 
 local MAPD_CFG  = "/etc/map/mapd_cfg"
 local MAP1905   = "/etc/map/1905d.cfg"
-local WAPPCTRL  = "/sbin/wappctrl"
-local STARTWAPP = "/sbin/startwapp.sh"
+
+-- locate a MTK daemon tool that firmwares may install under different bin
+-- dirs (237 / closed-source builds are known to move these around). Probing
+-- the common paths keeps every panel action working out of the box instead
+-- of failing on a single hard-coded /sbin path.
+local function find_tool(basename)
+	for _, dir in ipairs({ "/sbin", "/usr/sbin", "/usr/bin", "/bin" }) do
+		local p = dir .. "/" .. basename
+		if fs.access(p) then return p end
+	end
+	return nil
+end
+
+-- The MTK wapp control binary is named "wappctl" on device, but the panel
+-- (and some SDK revisions) has historically used "wappctrl". Probe both,
+-- preferring the real "wappctl", so the tool is always found.
+local function find_wappctl()
+	for _, name in ipairs({ "wappctl", "wappctrl" }) do
+		local p = find_tool(name)
+		if p then return p end
+	end
+	return nil
+end
 
 -- backup file format version written into the backup header
 local BACKUP_VERSION = 1
@@ -107,9 +128,31 @@ local function br_mac()
 	return m and m:lower() or ""
 end
 
+-- true if a daemon (wapp/bs20) is running; exact comm match first, then a
+-- /proc cmdline fallback for firmware that wraps the daemon and changes the
+-- process comm. The "/<name> " token is anchored so "startwapp" / "wappctrl"
+-- can never false-positive on the substring.
 local function proc_running(name)
 	local out = exec("pgrep -x '" .. name .. "'")
-	return out:gsub("%s+", "") ~= ""
+	if out:gsub("%s+", "") ~= "" then return true end
+	local token = "/" .. name .. " "
+	local proc = io.popen("/bin/ls /proc 2>/dev/null")
+	if not proc then return false end
+	for pid in proc:lines() do
+		if pid:match("^%d+$") then
+			local f = io.open("/proc/" .. pid .. "/cmdline", "rb")
+			if f then
+				local c = f:read("*a"):gsub("%z", " ")
+				f:close()
+				if c:find(token, 1, true) then
+					proc:close()
+					return true
+				end
+			end
+		end
+	end
+	proc:close()
+	return false
 end
 
 local function mtwifi_radios()
@@ -417,11 +460,10 @@ end
 local function restart_daemons(enabled)
 	run("killall wapp bs20")
 	if enabled == "1" then
-		if fs.access(STARTWAPP) then
-			run(STARTWAPP)
-		else
+		if not find_tool("startwapp.sh") then
 			return false
 		end
+		run(find_tool("startwapp.sh"))
 	end
 	return true
 end
@@ -479,7 +521,9 @@ local function v_text(s)
 end
 
 local function wappctrl(iface, args)
-	return exec(string.format("%s %s %s", WAPPCTRL, iface, args))
+	local bin = find_wappctl()
+	if not bin then return "" end
+	return exec(string.format("%s %s %s", bin, iface, args))
 end
 
 -- ---------------------------------------------------------------------------
@@ -695,8 +739,8 @@ local methods = {
 			cfg.cur_mode = current_mode()
 			cfg.cur_role = current_role()
 			cfg.cur_steer_enable = kv_get(MAPD_CFG, "SteerEnable") or ""
-			cfg.startwapp_available = fs.access(STARTWAPP) and true or false
-			cfg.wappctrl_available = fs.access(WAPPCTRL) and true or false
+			cfg.startwapp_available = find_tool("startwapp.sh") ~= nil
+			cfg.wappctrl_available = find_wappctl() ~= nil
 			print(json.stringify(cfg))
 		end
 	},

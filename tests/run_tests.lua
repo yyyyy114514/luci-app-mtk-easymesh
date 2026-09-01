@@ -521,6 +521,53 @@ ok(ran("iwpriv apclix0 set ApCliEnable=0"), "bhDisconnect disables the apcli cli
 ok(ran("ifconfig apclix0 down"), "bhDisconnect brings the interface down")
 
 -- =====================================================================
+-- L. daemon tool detection / panel "just works" on non-default layouts
+--    (find_tool multi-path probing + restart_daemons via the found path)
+--
+-- NOTE: /sbin always carries startwapp.sh in this sandbox and setup()
+-- rewrites it, so /sbin deletion cannot be exercised. Instead the
+-- non-default-dir fallback is proven with wappctrl, whose /sbin slot is
+-- intentionally left empty while /usr/sbin carries a stub.
+-- =====================================================================
+print("-- L: find_tool daemon tool detection --")
+setup()
+
+-- default layout: startwapp.sh found under /sbin, wappctrl absent
+r = call("getConfig", {})
+j = v(r)
+ok(j.startwapp_available == true, "startwapp_available true (probed)")
+ok(j.wappctrl_available == false, "wappctrl_available false when tool absent")
+
+-- multi-path probe: a tool only present under /usr/sbin must be located
+os.execute("mkdir -p /usr/sbin")
+fs.writefile("/usr/sbin/wappctrl", "#!/bin/sh\n# stub\n")
+os.execute("chmod +x /usr/sbin/wappctrl")
+r = call("getConfig", {})
+j = v(r)
+ok(j.wappctrl_available == true, "wappctrl_available true via /usr/sbin probe")
+
+-- the wappctrl RPC uses the probed path without a hard-path error
+r = call("wappVersion", {})
+j = v(r)
+ok(j.ok == true, "wappVersion runs via probed wappctrl")
+
+-- restart_daemons locates startwapp.sh via find_tool on Apply (enabled=1)
+package.preload["luci.model.uci"]().reset()
+r = call("applyConfig", {})
+j = v(r)
+ok(j.ok == true and j.restarted == true, "applyConfig restarts daemons via probed startwapp.sh")
+ok(ran("killall wapp bs20"), "applyConfig kills stale daemons")
+ok(ran("startwapp.sh"), "applyConfig runs the located startwapp.sh")
+
+-- removing the tool makes availability drop back to false (no crash)
+os.remove("/usr/sbin/wappctrl")
+r = call("getConfig", {})
+j = v(r)
+ok(j.wappctrl_available == false, "wappctrl_available false after removal")
+
+print("daemon tool detection ok via probing")
+
+-- =====================================================================
 -- summary
 -- =====================================================================
 print(string.format("\n==== passed: %d  failed: %d ====", passed, failed))
