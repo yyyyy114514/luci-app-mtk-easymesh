@@ -34,6 +34,13 @@ local function find_wappctl()
 	return nil
 end
 
+-- daemon names: the mtwifi-wapp package (237 / hanwckf / ZJJCKA builds)
+-- ships "wapp" and "bs20" in /sbin; some vendor SDK builds rename them to
+-- "wappd" / "1905daemon". every kill / probe walks the alias lists so the
+-- panel keeps working on either layout.
+local WAPP_NAMES = { "wapp", "wappd" }
+local BS20_NAMES = { "bs20", "1905daemon" }
+
 -- backup file format version written into the backup header
 local BACKUP_VERSION = 1
 
@@ -130,12 +137,27 @@ end
 
 -- true if a daemon (wapp/bs20) is running; exact comm match first, then a
 -- /proc cmdline fallback for firmware that wraps the daemon and changes the
--- process comm. The "/<name> " token is anchored so "startwapp" / "wappctrl"
--- can never false-positive on the substring.
+-- process comm. The name is anchored on both sides ("/" or line start
+-- before, space or line end after) so "wapp" can never false-positive on
+-- "wappctrl" / "startwapp.sh" / "wappd", and "bs20" never matches an
+-- unrelated longer name.
+local function cmdline_has_name(c, name)
+	local i = 1
+	while true do
+		local s, e = c:find(name, i, true)
+		if not s then return false end
+		local before = (s > 1) and c:sub(s - 1, s - 1) or ""
+		local after = c:sub(e + 1, e + 1)
+		if (before == "" or before == "/") and (after == "" or after == " ") then
+			return true
+		end
+		i = s + 1
+	end
+end
+
 local function proc_running(name)
 	local out = exec("pgrep -x '" .. name .. "'")
 	if out:gsub("%s+", "") ~= "" then return true end
-	local token = "/" .. name .. " "
 	local proc = io.popen("/bin/ls /proc 2>/dev/null")
 	if not proc then return false end
 	for pid in proc:lines() do
@@ -144,7 +166,7 @@ local function proc_running(name)
 			if f then
 				local c = f:read("*a"):gsub("%z", " ")
 				f:close()
-				if c:find(token, 1, true) then
+				if cmdline_has_name(c, name) then
 					proc:close()
 					return true
 				end
@@ -152,6 +174,13 @@ local function proc_running(name)
 		end
 	end
 	proc:close()
+	return false
+end
+
+local function any_running(names)
+	for _, n in ipairs(names) do
+		if proc_running(n) then return true end
+	end
 	return false
 end
 
@@ -457,15 +486,116 @@ local function sync_wireless(cursor, enabled, bandsteering, mesh_sr, steeringthr
 	cursor:commit("wireless")
 end
 
-local function restart_daemons(enabled)
-	run("killall wapp bs20")
-	if enabled == "1" then
-		if not find_tool("startwapp.sh") then
-			return false
+-- ---------------------------------------------------------------------------
+-- daemon control. stop every known alias, then bring EasyMesh back up
+-- using whatever this firmware provides:
+--   1. the firmware startwapp.sh (mtwifi-wapp) when present - it also
+--      performs the driver level iwpriv MAP setup;
+--   2. a direct "wapp -d1 -v2 -c<ifaces>" + bs20 start as fallback,
+--      because startwapp.sh decides from hardcoded MT798x UCI section
+--      names (MT7986_1_1 / default_MT7986_1_2 ...) and silently declines
+--      ("no interface requires wapp start") on devices whose radio
+--      sections are named differently, which used to leave wapp down
+--      even though the panel reported success.
+-- ---------------------------------------------------------------------------
+
+-- daemons must survive the rpcd call that started them
+local function run_bg(cmd)
+	sys.call(cmd .. " >/dev/null 2>&1 &")
+end
+
+local function stop_daemons()
+	for _, name in ipairs(WAPP_NAMES) do run("killall " .. name) end
+	for _, name in ipairs(BS20_NAMES) do run("killall " .. name) end
+end
+
+-- main AP interface of every enabled mtwifi radio, e.g. { "ra0", "rax0" }
+local function wapp_ifaces()
+	local ifaces = {}
+	for _, r in ipairs(mtwifi_radios()) do
+		if r.disabled ~= "1" then
+			local ifn = ifname_for_radio(r.name, r.band)
+			local dup = false
+			for _, v in ipairs(ifaces) do
+				if v == ifn then
+					dup = true
+					break
+				end
+			end
+			if not dup then table.insert(ifaces, ifn) end
 		end
-		run(find_tool("startwapp.sh"))
 	end
-	return true
+	return ifaces
+end
+
+-- mirror the essential steps of startwapp.sh but derive the interfaces
+-- from the live mtwifi radios instead of hardcoded MT798x section names,
+-- so EasyMesh comes up on every device / firmware combination
+local function start_daemons_direct()
+	local wapp = find_tool("wapp")
+	if not wapp then
+		return false, "the wapp daemon binary was not found (mtwifi-wapp is not installed?)"
+	end
+
+	local ifaces = wapp_ifaces()
+	if #ifaces == 0 then
+		return false, "no enabled mtwifi radio found"
+	end
+
+	-- the 1905 ALIDs must match the br-lan MAC before the daemons come up
+	local al = br_mac()
+	if al ~= "" then
+		kv_set(MAP1905, { map_controller_alid = al, map_agent_alid = al })
+	end
+
+	local args = {}
+	for _, ifn in ipairs(ifaces) do
+		table.insert(args, "-c" .. ifn)
+	end
+	run_bg(string.format("%s -d1 -v2 %s", wapp, table.concat(args, " ")))
+	os.execute("sleep 1")
+
+	-- driver level MAP setup, mirroring startwapp.sh
+	for _, ifn in ipairs(ifaces) do
+		run("iwpriv " .. ifn .. " set mapR2Enable=0")
+		run("iwpriv " .. ifn .. " set mapTSEnable=0")
+		run("iwpriv " .. ifn .. " set mapR3Enable=0")
+		run("iwpriv " .. ifn .. " set DppEnable=0")
+		run("iwpriv " .. ifn .. " set mapEnable=2")
+	end
+
+	local bs20 = find_tool("bs20") or find_tool("1905daemon")
+	if bs20 then run_bg(bs20) end
+
+	-- reset the wapp MBO state like startwapp.sh does (best effort)
+	local ctl = find_wappctl()
+	if ctl then
+		for _, ifn in ipairs(ifaces) do
+			run(string.format("%s %s mbo reset_default", ctl, ifn))
+		end
+	end
+
+	if any_running(WAPP_NAMES) then return true, "direct start" end
+	return false, "wapp did not stay up after the direct start"
+end
+
+local function restart_daemons(enabled)
+	stop_daemons()
+	if enabled ~= "1" then
+		return true, "stopped"
+	end
+
+	local sh = find_tool("startwapp.sh")
+	if sh then
+		run(sh)
+		if any_running(WAPP_NAMES) then
+			return true, "startwapp.sh"
+		end
+		-- startwapp.sh ran but did not bring wapp up (its hardcoded UCI
+		-- section heuristics declined); fall through to the direct start
+	end
+
+	return start_daemons_direct()
 end
 
 -- ---------------------------------------------------------------------------
@@ -741,6 +871,9 @@ local methods = {
 			cfg.cur_steer_enable = kv_get(MAPD_CFG, "SteerEnable") or ""
 			cfg.startwapp_available = find_tool("startwapp.sh") ~= nil
 			cfg.wappctrl_available = find_wappctl() ~= nil
+			cfg.wapp_available = find_tool("wapp") ~= nil
+			cfg.bs20_available = (find_tool("bs20") or find_tool("1905daemon")) ~= nil
+			cfg.map_cfg_available = (fs.access(MAPD_CFG) and fs.access(MAP1905)) and true or false
 			print(json.stringify(cfg))
 		end
 	},
@@ -748,8 +881,8 @@ local methods = {
 	getStatus = {
 		call = function()
 			local status = {
-				wapp_running = proc_running("wapp"),
-				bs20_running = proc_running("bs20"),
+				wapp_running = any_running(WAPP_NAMES),
+				bs20_running = any_running(BS20_NAMES),
 				al_mac = br_mac(),
 				map_ver = kv_get(MAP1905, "map_ver") or "",
 				device_role = current_role(),
@@ -772,7 +905,7 @@ local methods = {
 				device_mode = current_mode(),
 				controller_alid = kv_get(MAP1905, "map_controller_alid") or "",
 				agent_alid = kv_get(MAP1905, "map_agent_alid") or "",
-				wapp_running = proc_running("wapp"),
+				wapp_running = any_running(WAPP_NAMES),
 				radios = mtwifi_radios(),
 				stations = collect_stas(),
 				backhaul = backhaul_status()
@@ -925,12 +1058,13 @@ local methods = {
 			local enabled, bandsteering, mesh_sr, steeringthresold = push_config(cursor)
 
 			sync_wireless(cursor, enabled, bandsteering, mesh_sr, steeringthresold)
-			local started = restart_daemons(enabled)
+			local started, via = restart_daemons(enabled)
 
 			print(json.stringify({
 				ok = true,
 				enabled = enabled,
-				restarted = (enabled == "1") and started or false
+				restarted = (enabled == "1") and started or false,
+				started_via = (enabled == "1") and via or nil
 			}))
 		end
 	},
@@ -982,6 +1116,158 @@ local methods = {
 		end
 	},
 
+	-- one-shot diagnostics bundle: everything a human (or an AI) needs to
+	-- debug "cannot start / not detected" reports, as plain text with clear
+	-- section markers. secrets (wifi keys, backhaul passphrases) are masked.
+	collectDiagnostics = {
+		call = function()
+			local out = {}
+			local function sec(title)
+				out[#out + 1] = ""
+				out[#out + 1] = "=============================================================="
+				out[#out + 1] = "== " .. title
+				out[#out + 1] = "=============================================================="
+			end
+			local function kv(k, v)
+				out[#out + 1] = string.format("%-34s: %s", tostring(k), tostring(v))
+			end
+			local function raw(s)
+				out[#out + 1] = (s:gsub("%s+$", ""))
+			end
+
+			sec("DEVICE / FIRMWARE")
+			kv("generated", os.date("%Y-%m-%d %H:%M:%S"))
+			raw(exec("ubus call system board 2>/dev/null") or "")
+			kv("uptime", exec("uptime 2>/dev/null"):gsub("%s+$", ""))
+
+			sec("PLUGIN STATE (uci: easymesh)")
+			local cursor = uci.cursor()
+			local function dump_uci(cfg, stypes, mask_keys)
+				cursor:foreach(cfg, stypes, function(s)
+					raw(string.format("config %s '%s'", s[".type"], s[".name"]))
+					local keys = {}
+					for k in pairs(s) do
+						if k:sub(1, 1) ~= "." then table.insert(keys, k) end
+					end
+					table.sort(keys)
+					for _, k in ipairs(keys) do
+						local v = s[k]
+						if type(v) == "table" then
+							local parts = {}
+							for _, item in ipairs(v) do table.insert(parts, tostring(item)) end
+							v = table.concat(parts, ", ")
+						else
+							v = tostring(v)
+						end
+						if mask_keys and (k:match("key%d*$") or k == "key" or k == "psk" or k == "password") and #v > 0 then
+							v = "****MASKED****"
+						end
+						raw(string.format("\toption %s '%s'", k, v))
+					end
+				end)
+			end
+			dump_uci("easymesh", "easymesh", false)
+
+			sec("TOOL / DAEMON BINARY PROBES")
+			local probes = {
+				{ "wapp (daemon)", "wapp" },
+				{ "wappd (daemon alias)", "wappd" },
+				{ "bs20 (daemon)", "bs20" },
+				{ "1905daemon (alias)", "1905daemon" },
+				{ "wappctl", "wappctl" },
+				{ "wappctrl", "wappctrl" },
+				{ "startwapp.sh", "startwapp.sh" },
+				{ "mtwifi_cfg", "mtwifi_cfg" },
+				{ "iwpriv", "iwpriv" },
+				{ "pgrep", "pgrep" },
+				{ "logread", "logread" }
+			}
+			for _, p in ipairs(probes) do
+				local found
+				for _, dir in ipairs({ "/sbin", "/usr/sbin", "/usr/bin", "/bin" }) do
+					if fs.access(dir .. "/" .. p[2]) then
+						found = (found and (found .. " ") or "") .. dir .. "/" .. p[2]
+					end
+				end
+				kv(p[1], found or "NOT FOUND")
+			end
+			kv("/etc/map/mapd_cfg", fs.access(MAPD_CFG) and "present" or "MISSING")
+			kv("/etc/map/1905d.cfg", fs.access(MAP1905) and "present" or "MISSING")
+			kv("/etc/config/easymesh", fs.access("/etc/config/easymesh") and "present" or "MISSING")
+
+			sec("DAEMON RUNTIME STATUS")
+			kv("wapp running (wapp|wappd)", tostring(any_running(WAPP_NAMES)))
+			kv("bs20 running (bs20|1905daemon)", tostring(any_running(BS20_NAMES)))
+			raw("pgrep -a output:")
+			raw(exec("pgrep -a -f 'wapp|bs20|1905|mapd' 2>/dev/null") or "")
+			if (exec("pgrep -a -f 'wapp|bs20|1905|mapd' 2>/dev/null") or ""):gsub("%s+", "") == "" then
+				raw("(no matching process)")
+			end
+			raw("ps output:")
+			raw(exec("ps w 2>/dev/null | grep -E 'wapp|bs20|1905|mapd' | grep -v grep") or "")
+			if (exec("ps w 2>/dev/null | grep -E 'wapp|bs20|1905|mapd' | grep -v grep") or ""):gsub("%s+", "") == "" then
+				raw("(no matching process)")
+			end
+
+			sec("WIRELESS CONFIG (uci: wireless, secrets masked)")
+			dump_uci("wireless", "wifi-device", true)
+			dump_uci("wireless", "wifi-iface", true)
+
+			sec("MAP CONFIG FILES (secrets masked)")
+			raw("-- /etc/map/mapd_cfg --")
+			local mapd = fs.readfile(MAPD_CFG)
+			if mapd then
+				for line in mapd:gmatch("[^\r\n]+") do
+					local k, v = line:match("^([%w_]-)=(.*)$")
+					if v and v ~= "" and k and (k:find("Psk") or k:find("Key") or k:find("Password")) then
+						raw(k .. "=****MASKED****")
+					else
+						raw(line)
+					end
+				end
+			else
+				raw("(file missing)")
+			end
+			raw("-- /etc/map/1905d.cfg --")
+			local m1905 = fs.readfile(MAP1905)
+			if m1905 then
+				for line in m1905:gmatch("[^\r\n]+") do
+					local k, v = line:match("^([%w_]-)=(.*)$")
+					if v and v ~= "" and k and (k:find("Psk") or k:find("Key") or k:find("Password")) then
+						raw(k .. "=****MASKED****")
+					else
+						raw(line)
+					end
+				end
+			else
+				raw("(file missing)")
+			end
+
+			sec("WAPP VERSION / CONTROL TOOL")
+			local ctl = find_wappctl()
+			kv("control tool", ctl or "NOT FOUND")
+			if ctl then
+				raw(exec(ctl .. " ra0 version 2>&1 | head -n 20") or "")
+			end
+
+			sec("NETWORK INTERFACES")
+			raw(exec("ls /sys/class/net 2>/dev/null") or "")
+
+			sec("SYSTEM LOG (wapp / bs20 / 1905 / mapd / easymesh, last 120 lines)")
+			local logs = exec("logread 2>/dev/null | grep -iE 'wapp|bs20|1905|mapd|easymesh|startwapp' | tail -n 120")
+			raw(logs ~= "" and logs or "(no matching log lines)")
+
+			out[#out + 1] = ""
+			out[#out + 1] = "=== END OF DIAGNOSTICS ==="
+
+			print(json.stringify({
+				ok = true,
+				filename = "easymesh-diagnostics-" .. os.date("%Y%m%d-%H%M%S") .. ".txt",
+				content = table.concat(out, "\n")
+			}))
+		end
+	},
+
 	restoreConfig = {
 		args = { content = "" },
 		call = function(_args)
@@ -1029,12 +1315,13 @@ local methods = {
 			local cursor = uci.cursor()
 			local enabled, bandsteering, mesh_sr, steeringthresold = push_config(cursor)
 			sync_wireless(cursor, enabled, bandsteering, mesh_sr, steeringthresold)
-			local started = restart_daemons(enabled)
+			local started, via = restart_daemons(enabled)
 
 			print(json.stringify({
 				ok = true,
 				enabled = enabled,
 				restarted = (enabled == "1") and started or false,
+				started_via = (enabled == "1") and via or nil,
 				legacy = (version == nil) or nil
 			}))
 		end
@@ -1127,12 +1414,13 @@ local methods = {
 
 			local enabled, bandsteering, mesh_sr, steeringthresold = push_config(cursor)
 			sync_wireless(cursor, enabled, bandsteering, mesh_sr, steeringthresold)
-			local started = restart_daemons(enabled)
+			local started, via = restart_daemons(enabled)
 
 			print(json.stringify({
 				ok = true,
 				enabled = enabled,
-				restarted = (enabled == "1") and started or false
+				restarted = (enabled == "1") and started or false,
+				started_via = (enabled == "1") and via or nil
 			}))
 		end
 	},

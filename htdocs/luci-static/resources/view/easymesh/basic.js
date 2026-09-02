@@ -327,7 +327,7 @@ function checkDaemonHealth(enabled, done) {
 		L.resolveDefault(callGetStatus(), {}).then(function(status) {
 			if (status && !status.wapp_running)
 				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
-					_('wapp did not come up after the restart. Check that mtwifi-cfg / mtwifi-wapp are installed and the wireless configuration is valid.')));
+					_('wapp is still not running. Check that the mtwifi-wapp package is installed (wapp / bs20 / startwapp.sh in /sbin) and inspect the system log: logread | grep -e wapp -e bs20 -e startwapp.')));
 			if (done) done();
 		});
 	}, 3000);
@@ -640,12 +640,14 @@ return view.extend({
 				var cfg = data[1] || {};
 				return L.resolveDefault(callApplyConfig(), {}).then(function(res) {
 					var msg;
-					if (!cfg.startwapp_available)
-						msg = _('Applied, but /sbin/startwapp.sh was not found. Is mtwifi-cfg installed?');
-					else if (res.enabled == '1')
-						msg = _('EasyMesh configuration applied, wapp / bs20 have been restarted.');
-					else
+					if (res.enabled != '1')
 						msg = _('EasyMesh has been disabled. Note: band steering and 802.11r are also disabled on the radios to keep wapp stopped.');
+					else if (res.restarted)
+						msg = _('EasyMesh configuration applied, wapp / bs20 have been restarted (via %s).').format(res.started_via || 'startwapp.sh');
+					else if (!cfg.wapp_available)
+						msg = _('Applied, but the wapp daemon binary was not found. Install the mtwifi-wapp package (237 / hanwckf firmware) which provides wapp / bs20 / startwapp.sh, then apply again.');
+					else
+						msg = _('EasyMesh configuration applied, but the wapp daemon did not come up: %s. Check the system log (logread | grep -e wapp -e bs20) and the wireless configuration.').format(res.started_via || _('unknown reason'));
 					ui.addNotification(null, E('p', {}, msg));
 					checkDaemonHealth(res.enabled);
 				});

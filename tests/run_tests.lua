@@ -521,15 +521,15 @@ ok(ran("iwpriv apclix0 set ApCliEnable=0"), "bhDisconnect disables the apcli cli
 ok(ran("ifconfig apclix0 down"), "bhDisconnect brings the interface down")
 
 -- =====================================================================
--- L. daemon tool detection / panel "just works" on non-default layouts
---    (find_tool multi-path probing + restart_daemons via the found path)
+-- L. daemon tool detection / startup fallback chain
+--    (find_tool multi-path probing + startwapp.sh / direct-start paths)
 --
 -- NOTE: /sbin always carries startwapp.sh in this sandbox and setup()
 -- rewrites it, so /sbin deletion cannot be exercised. Instead the
 -- non-default-dir fallback is proven with wappctrl, whose /sbin slot is
 -- intentionally left empty while /usr/sbin carries a stub.
 -- =====================================================================
-print("-- L: find_tool daemon tool detection --")
+print("-- L: daemon tool detection / startup --")
 setup()
 
 -- default layout: startwapp.sh found under /sbin, wappctrl absent
@@ -537,6 +537,9 @@ r = call("getConfig", {})
 j = v(r)
 ok(j.startwapp_available == true, "startwapp_available true (probed)")
 ok(j.wappctrl_available == false, "wappctrl_available false when tool absent")
+ok(j.wapp_available == false, "wapp_available false when daemon binary absent")
+ok(j.bs20_available == false, "bs20_available false when daemon binary absent")
+ok(j.map_cfg_available == true, "map_cfg_available true (mapd_cfg + 1905d.cfg present)")
 
 -- multi-path probe: a tool only present under /usr/sbin must be located
 os.execute("mkdir -p /usr/sbin")
@@ -551,13 +554,20 @@ r = call("wappVersion", {})
 j = v(r)
 ok(j.ok == true, "wappVersion runs via probed wappctrl")
 
--- restart_daemons locates startwapp.sh via find_tool on Apply (enabled=1)
+-- applyConfig with startwapp.sh present: it is executed, every daemon
+-- alias is killed, and - since the stub starts nothing and there is no
+-- wapp binary - the result honestly reports "not restarted" instead of
+-- the old false success
 package.preload["luci.model.uci"]().reset()
 r = call("applyConfig", {})
 j = v(r)
-ok(j.ok == true and j.restarted == true, "applyConfig restarts daemons via probed startwapp.sh")
-ok(ran("killall wapp bs20"), "applyConfig kills stale daemons")
-ok(ran("startwapp.sh"), "applyConfig runs the located startwapp.sh")
+ok(j.ok == true and j.enabled == "1", "applyConfig ok with startwapp.sh present")
+ok(ran("killall wapp"), "applyConfig kills stale wapp")
+ok(ran("killall wappd"), "applyConfig kills the wappd alias too")
+ok(ran("killall bs20"), "applyConfig kills stale bs20")
+ok(ran("/sbin/startwapp.sh"), "applyConfig runs the located startwapp.sh")
+ok(j.restarted == false, "restarted false: stub startwapp.sh starts nothing")
+ok(tostring(j.started_via):find("mtwifi%-wapp"), "failure reason names the missing package")
 
 -- removing the tool makes availability drop back to false (no crash)
 os.remove("/usr/sbin/wappctrl")
@@ -565,7 +575,75 @@ r = call("getConfig", {})
 j = v(r)
 ok(j.wappctrl_available == false, "wappctrl_available false after removal")
 
-print("daemon tool detection ok via probing")
+-- direct-start fallback: no startwapp.sh at all, but the wapp / bs20
+-- binaries exist - the plugin must start them itself with the interfaces
+-- derived from the live mtwifi radios
+os.remove("/sbin/startwapp.sh")
+fs.writefile("/sbin/wapp", "#!/bin/sh\n# stub, exits immediately\n")
+fs.writefile("/sbin/bs20", "#!/bin/sh\n# stub, exits immediately\n")
+os.execute("chmod +x /sbin/wapp /sbin/bs20")
+r = call("getConfig", {})
+j = v(r)
+ok(j.wapp_available == true and j.bs20_available == true, "wapp/bs20 binaries probed")
+ok(j.startwapp_available == false, "startwapp_available false after removal")
+
+package.preload["luci.model.uci"]().reset()
+r = call("applyConfig", {})
+j = v(r)
+ok(j.ok == true, "applyConfig ok without startwapp.sh")
+ok(ran("/sbin/wapp -d1 -v2 -cra0 -crax0"), "direct start runs wapp with both radio ifaces")
+ok(ran("iwpriv ra0 set mapEnable=2"), "direct start enables driver MAP mode on ra0")
+ok(ran("iwpriv rax0 set mapEnable=2"), "direct start enables driver MAP mode on rax0")
+ok(ran("/sbin/bs20"), "direct start launches bs20")
+-- the stub daemon exits instantly, so the process check must not lie
+ok(j.restarted == false, "restarted false: stub wapp does not stay up")
+ok(tostring(j.started_via):find("direct start"), "started_via reports the direct start path")
+
+os.remove("/sbin/wapp")
+os.remove("/sbin/bs20")
+
+print("daemon tool detection / startup fallback ok")
+
+-- =====================================================================
+-- M. collectDiagnostics: About-page report (sections, probes, masking)
+-- =====================================================================
+print("-- M: collectDiagnostics --")
+setup()
+
+r = call("collectDiagnostics", {})
+j = v(r)
+ok(j.ok == true and type(j.content) == "string" and #j.content > 0, "collectDiagnostics returns content")
+ok(j.filename and j.filename:match("^easymesh%-diagnostics%-"), "report filename format")
+ok(j.content:find("DEVICE / FIRMWARE", 1, true), "report has device/firmware section")
+ok(j.content:find("TOOL / DAEMON BINARY PROBES", 1, true), "report has tool probe section")
+ok(j.content:find("DAEMON RUNTIME STATUS", 1, true), "report has daemon status section")
+ok(j.content:find("WIRELESS CONFIG", 1, true), "report has wireless section")
+ok(j.content:find("MAP CONFIG FILES", 1, true), "report has map config section")
+ok(j.content:find("SYSTEM LOG", 1, true), "report has system log section")
+ok(j.content:find("END OF DIAGNOSTICS", 1, true), "report has end marker")
+-- the probe table must list startwapp.sh with its probed /sbin path
+ok(j.content:find("/sbin/startwapp.sh", 1, true), "probe lists /sbin/startwapp.sh")
+-- plugin state carries the uci options
+ok(j.content:find("option enabled", 1, true), "easymesh uci options dumped")
+
+-- secrets in wireless / mapd_cfg must be masked
+fs.writefile("/etc/config/wireless", WIRELESS ..
+	"\nconfig wifi-iface 'sectest'\n\toption device 'ra0'\n\toption mode 'ap'\n\toption key 'topsecret'\n")
+fs.writefile("/etc/map/mapd_cfg", MAPD:gsub("BhProfile0WpaPsk=", "BhProfile0WpaPsk=hunter2"))
+package.preload["luci.model.uci"]().reset()
+r = call("collectDiagnostics", {})
+j = v(r)
+ok(not j.content:find("topsecret", 1, true), "wireless key masked")
+ok(not j.content:find("hunter2", 1, true), "mapd passphrase masked")
+ok(j.content:find("****MASKED****", 1, true), "mask marker present")
+-- empty secret values are left as-is (no misleading mask)
+fs.writefile("/etc/map/mapd_cfg", MAPD)
+r = call("collectDiagnostics", {})
+j = v(r)
+ok(j.content:find("BhProfile0WpaPsk=", 1, true) and not j.content:find("BhProfile0WpaPsk=%*%*%*%*MASKED", 1, true),
+   "empty passphrase not masked")
+
+print("collectDiagnostics ok")
 
 -- =====================================================================
 -- summary

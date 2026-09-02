@@ -54,7 +54,7 @@ function checkDaemonHealth(enabled) {
 		L.resolveDefault(callGetStatus(), {}).then(function(status) {
 			if (status && !status.wapp_running)
 				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
-					_('wapp did not come up after the restart. Check that mtwifi-cfg / mtwifi-wapp are installed and the wireless configuration is valid.')));
+					_('wapp is still not running. Check that the mtwifi-wapp package is installed (wapp / bs20 / startwapp.sh in /sbin) and inspect the system log: logread | grep -e wapp -e bs20 -e startwapp.')));
 		});
 	}, 3000);
 }

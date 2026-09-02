@@ -13,7 +13,8 @@
 					"dppBootstrapInfo",
 					"dppConfiguratorGetKey",
 					"wappVersion",
-					"backupConfig"
+					"backupConfig",
+					"collectDiagnostics"
 				]
 			},
 			"uci": [ "easymesh", "wireless" ]
