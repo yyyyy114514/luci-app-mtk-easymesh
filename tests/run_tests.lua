@@ -591,7 +591,7 @@ package.preload["luci.model.uci"]().reset()
 r = call("applyConfig", {})
 j = v(r)
 ok(j.ok == true, "applyConfig ok without startwapp.sh")
-ok(ran("/sbin/wapp -d1 -v2 -cra0 -crax0"), "direct start runs wapp with both radio ifaces")
+ok(ran("/sbin/wapp -d1 -v2 -cra0 -crax0"), "direct start runs wapp with both radio ifaces (sorted)")
 ok(ran("iwpriv ra0 set mapEnable=2"), "direct start enables driver MAP mode on ra0")
 ok(ran("iwpriv rax0 set mapEnable=2"), "direct start enables driver MAP mode on rax0")
 ok(ran("/sbin/bs20"), "direct start launches bs20")
@@ -601,6 +601,57 @@ ok(tostring(j.started_via):find("direct start"), "started_via reports the direct
 
 os.remove("/sbin/wapp")
 os.remove("/sbin/bs20")
+
+-- SDK layout (closed-source MTK wapp / 1905daemon / mapd set): procd init
+-- scripts /etc/init.d/wapp + /etc/init.d/easymesh gated on uci
+-- wapp.wapp.enable, daemon binaries under /usr/bin. The init scripts are
+-- stubs (sys.call really executes them, keep them no-ops) and the wapp
+-- stub exits at once, so the final state honestly reports "not
+-- restarted" while every init restart and the uci gate flip are recorded.
+os.execute("mkdir -p /etc/init.d /usr/bin")
+fs.writefile("/etc/init.d/wapp", "#!/bin/sh\n# stub\n")
+fs.writefile("/etc/init.d/easymesh", "#!/bin/sh\n# stub\n")
+fs.writefile("/usr/bin/wapp", "#!/bin/sh\n# stub, exits immediately\n")
+os.execute("chmod +x /etc/init.d/wapp /etc/init.d/easymesh /usr/bin/wapp")
+fs.writefile("/etc/config/wapp", "config wapp 'wapp'\n\toption enable 0\n")
+
+r = call("getConfig", {})
+j = v(r)
+ok(j.sdk_init_available == true, "sdk_init_available true with init scripts present")
+ok(j.wapp_available == true, "wapp_available true via /usr/bin/wapp (SDK layout)")
+
+package.preload["luci.model.uci"]().reset()
+r = call("applyConfig", {})
+j = v(r)
+ok(j.ok == true, "applyConfig ok in SDK layout")
+ok(ran("/etc/init.d/wapp stop"), "stop path stops the SDK wapp service first")
+ok(ran("/etc/init.d/easymesh stop"), "stop path stops the SDK easymesh service first")
+ok(ran("killall p1905_managerd"), "kills the p1905_managerd alias")
+ok(ran("killall mapd"), "kills the SDK mapd controller")
+ok(ran("/etc/init.d/wapp restart"), "SDK path restarts wapp via its init script")
+ok(ran("/etc/init.d/easymesh restart"), "SDK path restarts easymesh via its init script")
+local wappcfg = fs.readfile("/etc/config/wapp") or ""
+ok(wappcfg:match("option enable '1'") ~= nil, "uci wapp.wapp.enable flipped to 1 before restart")
+ok(j.restarted == false, "restarted false: stub SDK start brings nothing up")
+ok(tostring(j.started_via):find("SDK init"), "failure reason names the SDK init path")
+
+-- disabling EasyMesh must reset the uci gate so the SDK wapp service
+-- stays down on the next boot
+package.preload["luci.model.uci"]().reset()
+fs.writefile("/etc/config/easymesh", EASYMESH:gsub("option enabled '1'", "option enabled '0'"))
+r = call("applyConfig", {})
+j = v(r)
+ok(j.ok == true and j.restarted == false and j.enabled == "0", "applyConfig disable ok in SDK layout")
+wappcfg = fs.readfile("/etc/config/wapp") or ""
+ok(wappcfg:match("option enable '0'") ~= nil, "uci wapp.wapp.enable reset to 0 on disable")
+
+-- cleanup
+os.remove("/etc/init.d/wapp")
+os.remove("/etc/init.d/easymesh")
+os.remove("/usr/bin/wapp")
+os.remove("/etc/config/wapp")
+fs.writefile("/etc/config/easymesh", EASYMESH)
+package.preload["luci.model.uci"]().reset()
 
 print("daemon tool detection / startup fallback ok")
 

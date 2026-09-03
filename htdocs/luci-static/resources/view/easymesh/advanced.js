@@ -352,7 +352,7 @@ function checkDaemonHealth(enabled) {
 		L.resolveDefault(callGetStatus(), {}).then(function(status) {
 			if (status && !status.wapp_running)
 				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
-					_('wapp is still not running. Check that the mtwifi-wapp package is installed (wapp / bs20 / startwapp.sh in /sbin) and inspect the system log: logread | grep -e wapp -e bs20 -e startwapp.')));
+					_('wapp is still not running. Check that an EasyMesh daemon set is installed (mtwifi-wapp: wapp / bs20 / startwapp.sh in /sbin, or the MTK SDK set: /etc/init.d/wapp with wapp / p1905_managerd / mapd) and inspect the system log: logread | grep -e wapp -e bs20 -e 1905 -e mapd.')));
 		});
 	}, 3000);
 }
@@ -384,7 +384,7 @@ return view.extend({
 					else if (res.restarted)
 						msg = _('EasyMesh configuration applied, wapp / bs20 have been restarted (via %s).').format(res.started_via || 'startwapp.sh');
 					else if (!cfg.wapp_available)
-						msg = _('Applied, but the wapp daemon binary was not found. Install the mtwifi-wapp package (237 / hanwckf firmware) which provides wapp / bs20 / startwapp.sh, then apply again.');
+						msg = _('Applied, but no EasyMesh daemon was found. Install either the mtwifi-wapp package (provides wapp / bs20 / startwapp.sh in /sbin) or the MTK SDK EasyMesh set (provides wapp / 1905daemon / mapd with /etc/init.d/wapp), then apply again.');
 					else
 						msg = _('EasyMesh configuration applied, but the wapp daemon did not come up: %s. Check the system log (logread | grep -e wapp -e bs20) and the wireless configuration.').format(res.started_via || _('unknown reason'));
 					ui.addNotification(null, E('p', {}, msg));

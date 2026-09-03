@@ -49,7 +49,7 @@ msgstr ""
 msgid "AP Steering RSSI Threshold"
 msgstr ""
 
-msgid "Applied, but /sbin/startwapp.sh was not found. Is mtwifi-cfg installed?"
+msgid "Applied, but no EasyMesh daemon was found. Install either the mtwifi-wapp package (provides wapp / bs20 / startwapp.sh in /sbin) or the MTK SDK EasyMesh set (provides wapp / 1905daemon / mapd with /etc/init.d/wapp), then apply again."
 msgstr ""
 
 msgid "Apply Backhaul Type"
@@ -1367,6 +1367,9 @@ msgid "wapp daemon"
 msgstr ""
 
 msgid "wapp is not running. Enable EasyMesh and apply the configuration first."
+msgstr ""
+
+msgid "wapp is still not running. Check that an EasyMesh daemon set is installed (mtwifi-wapp: wapp / bs20 / startwapp.sh in /sbin, or the MTK SDK set: /etc/init.d/wapp with wapp / p1905_managerd / mapd) and inspect the system log: logread | grep -e wapp -e bs20 -e 1905 -e mapd."
 msgstr ""
 
 msgid "wapp Version Information"

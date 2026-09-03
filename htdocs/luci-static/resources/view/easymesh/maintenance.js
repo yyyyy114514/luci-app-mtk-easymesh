@@ -54,7 +54,7 @@ function checkDaemonHealth(enabled) {
 		L.resolveDefault(callGetStatus(), {}).then(function(status) {
 			if (status && !status.wapp_running)
 				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
-					_('wapp is still not running. Check that the mtwifi-wapp package is installed (wapp / bs20 / startwapp.sh in /sbin) and inspect the system log: logread | grep -e wapp -e bs20 -e startwapp.')));
+					_('wapp is still not running. Check that an EasyMesh daemon set is installed (mtwifi-wapp: wapp / bs20 / startwapp.sh in /sbin, or the MTK SDK set: /etc/init.d/wapp with wapp / p1905_managerd / mapd) and inspect the system log: logread | grep -e wapp -e bs20 -e 1905 -e mapd.')));
 		});
 	}, 3000);
 }

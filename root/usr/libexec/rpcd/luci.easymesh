@@ -35,11 +35,16 @@ local function find_wappctl()
 end
 
 -- daemon names: the mtwifi-wapp package (237 / hanwckf / ZJJCKA builds)
--- ships "wapp" and "bs20" in /sbin; some vendor SDK builds rename them to
--- "wappd" / "1905daemon". every kill / probe walks the alias lists so the
--- panel keeps working on either layout.
+-- ships "wapp" and "bs20" in /sbin; the closed-source MTK SDK EasyMesh set
+-- ships the same "wapp" plus "p1905_managerd" (1905daemon package) and
+-- "mapd" (mapd package) under /usr/bin, managed by the procd init scripts
+-- /etc/init.d/wapp and /etc/init.d/easymesh. every kill / probe walks the
+-- alias lists so the panel keeps working on every layout.
 local WAPP_NAMES = { "wapp", "wappd" }
-local BS20_NAMES = { "bs20", "1905daemon" }
+local BS20_NAMES = { "bs20", "1905daemon", "p1905_managerd" }
+local MAPD_NAMES = { "mapd" }
+-- procd services of the SDK layout, stopped/started via /etc/init.d/<svc>
+local SDK_INITS = { "easymesh", "wapp" }
 
 -- backup file format version written into the backup header
 local BACKUP_VERSION = 1
@@ -491,7 +496,12 @@ end
 -- using whatever this firmware provides:
 --   1. the firmware startwapp.sh (mtwifi-wapp) when present - it also
 --      performs the driver level iwpriv MAP setup;
---   2. a direct "wapp -d1 -v2 -c<ifaces>" + bs20 start as fallback,
+--   2. the closed-source MTK SDK EasyMesh set (wapp / 1905daemon / mapd
+--      packages): procd init scripts /etc/init.d/wapp and
+--      /etc/init.d/easymesh run the whole bring-up sequence (driver
+--      setup, uci2map, daemon launch) - always preferred over a
+--      hand-rolled start on that layout;
+--   3. a direct "wapp -d1 -v2 -c<ifaces>" + bs20 start as last resort,
 --      because startwapp.sh decides from hardcoded MT798x UCI section
 --      names (MT7986_1_1 / default_MT7986_1_2 ...) and silently declines
 --      ("no interface requires wapp start") on devices whose radio
@@ -505,11 +515,20 @@ local function run_bg(cmd)
 end
 
 local function stop_daemons()
+	-- SDK layout services are procd-managed: stop them through their init
+	-- scripts first so procd does not respawn the daemons behind our back
+	for _, svc in ipairs(SDK_INITS) do
+		if fs.access("/etc/init.d/" .. svc) then
+			run("/etc/init.d/" .. svc .. " stop")
+		end
+	end
+	for _, name in ipairs(MAPD_NAMES) do run("killall " .. name) end
 	for _, name in ipairs(WAPP_NAMES) do run("killall " .. name) end
 	for _, name in ipairs(BS20_NAMES) do run("killall " .. name) end
 end
 
 -- main AP interface of every enabled mtwifi radio, e.g. { "ra0", "rax0" }
+-- (sorted so the generated wapp command line is deterministic)
 local function wapp_ifaces()
 	local ifaces = {}
 	for _, r in ipairs(mtwifi_radios()) do
@@ -525,6 +544,7 @@ local function wapp_ifaces()
 			if not dup then table.insert(ifaces, ifn) end
 		end
 	end
+	table.sort(ifaces)
 	return ifaces
 end
 
@@ -579,9 +599,48 @@ local function start_daemons_direct()
 	return false, "wapp did not stay up after the direct start"
 end
 
+-- SDK layout startup: use the firmware's own procd init scripts. The wapp
+-- init script declines to start unless uci wapp.wapp.enable=1, so make
+-- sure that flag follows the panel switch before restarting.
+local function start_daemons_sdk()
+	local inits = {}
+	for _, svc in ipairs({ "wapp", "easymesh" }) do
+		if fs.access("/etc/init.d/" .. svc) then table.insert(inits, svc) end
+	end
+	if #inits == 0 then
+		return false, "no SDK init scripts (wapp/easymesh)"
+	end
+
+	if fs.access("/etc/config/wapp") then
+		local c = uci.cursor()
+		if c:get("wapp", "wapp", "enable") ~= "1" then
+			c:set("wapp", "wapp", "enable", "1")
+			c:commit("wapp")
+		end
+	end
+
+	for _, svc in ipairs(inits) do
+		run("/etc/init.d/" .. svc .. " restart")
+	end
+	os.execute("sleep 2")
+
+	if any_running(WAPP_NAMES) then
+		return true, "SDK init (" .. table.concat(inits, "+") .. ")"
+	end
+	return false, "SDK init (" .. table.concat(inits, "+") .. ") ran but wapp did not come up"
+end
+
 local function restart_daemons(enabled)
 	stop_daemons()
 	if enabled ~= "1" then
+		-- keep the SDK wapp service from coming back on the next boot
+		if fs.access("/etc/config/wapp") then
+			local c = uci.cursor()
+			if c:get("wapp", "wapp", "enable") ~= "0" then
+				c:set("wapp", "wapp", "enable", "0")
+				c:commit("wapp")
+			end
+		end
 		return true, "stopped"
 	end
 
@@ -592,10 +651,16 @@ local function restart_daemons(enabled)
 			return true, "startwapp.sh"
 		end
 		-- startwapp.sh ran but did not bring wapp up (its hardcoded UCI
-		-- section heuristics declined); fall through to the direct start
+		-- section heuristics declined); fall through to the SDK init path
 	end
 
-	return start_daemons_direct()
+	local ok_sdk, via_sdk = start_daemons_sdk()
+	if ok_sdk then return true, via_sdk end
+
+	local ok_direct, via_direct = start_daemons_direct()
+	if ok_direct then return true, via_direct end
+
+	return false, via_sdk .. "; " .. via_direct
 end
 
 -- ---------------------------------------------------------------------------
@@ -871,8 +936,9 @@ local methods = {
 			cfg.cur_steer_enable = kv_get(MAPD_CFG, "SteerEnable") or ""
 			cfg.startwapp_available = find_tool("startwapp.sh") ~= nil
 			cfg.wappctrl_available = find_wappctl() ~= nil
-			cfg.wapp_available = find_tool("wapp") ~= nil
-			cfg.bs20_available = (find_tool("bs20") or find_tool("1905daemon")) ~= nil
+			cfg.wapp_available = (find_tool("wapp") or find_tool("wappd")) ~= nil
+			cfg.bs20_available = (find_tool("bs20") or find_tool("1905daemon") or find_tool("p1905_managerd")) ~= nil
+			cfg.sdk_init_available = (fs.access("/etc/init.d/wapp") or fs.access("/etc/init.d/easymesh")) and true or false
 			cfg.map_cfg_available = (fs.access(MAPD_CFG) and fs.access(MAP1905)) and true or false
 			print(json.stringify(cfg))
 		end
@@ -1174,9 +1240,15 @@ local methods = {
 				{ "wappd (daemon alias)", "wappd" },
 				{ "bs20 (daemon)", "bs20" },
 				{ "1905daemon (alias)", "1905daemon" },
+				{ "p1905_managerd (SDK 1905daemon pkg)", "p1905_managerd" },
+				{ "1905ctrl (SDK)", "1905ctrl" },
+				{ "mapd (SDK MAP controller)", "mapd" },
+				{ "mapd_cli (SDK)", "mapd_cli" },
 				{ "wappctl", "wappctl" },
 				{ "wappctrl", "wappctrl" },
 				{ "startwapp.sh", "startwapp.sh" },
+				{ "wapp_openwrt.sh (SDK)", "wapp_openwrt.sh" },
+				{ "EasyMesh_openwrt.sh (SDK)", "EasyMesh_openwrt.sh" },
 				{ "mtwifi_cfg", "mtwifi_cfg" },
 				{ "iwpriv", "iwpriv" },
 				{ "pgrep", "pgrep" },
@@ -1194,10 +1266,14 @@ local methods = {
 			kv("/etc/map/mapd_cfg", fs.access(MAPD_CFG) and "present" or "MISSING")
 			kv("/etc/map/1905d.cfg", fs.access(MAP1905) and "present" or "MISSING")
 			kv("/etc/config/easymesh", fs.access("/etc/config/easymesh") and "present" or "MISSING")
+			kv("/etc/init.d/wapp (SDK)", fs.access("/etc/init.d/wapp") and "present" or "MISSING")
+			kv("/etc/init.d/easymesh (SDK)", fs.access("/etc/init.d/easymesh") and "present" or "MISSING")
+			kv("/etc/config/wapp (SDK, gates init.d/wapp)", fs.access("/etc/config/wapp") and "present" or "MISSING")
 
 			sec("DAEMON RUNTIME STATUS")
 			kv("wapp running (wapp|wappd)", tostring(any_running(WAPP_NAMES)))
-			kv("bs20 running (bs20|1905daemon)", tostring(any_running(BS20_NAMES)))
+			kv("bs20 running (bs20|1905daemon|p1905_managerd)", tostring(any_running(BS20_NAMES)))
+			kv("mapd running (SDK controller)", tostring(any_running(MAPD_NAMES)))
 			raw("pgrep -a output:")
 			raw(exec("pgrep -a -f 'wapp|bs20|1905|mapd' 2>/dev/null") or "")
 			if (exec("pgrep -a -f 'wapp|bs20|1905|mapd' 2>/dev/null") or ""):gsub("%s+", "") == "" then
