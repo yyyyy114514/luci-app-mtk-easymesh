@@ -1,0 +1,99 @@
+#!/bin/sh /etc/rc.common
+# Boot-time fallback for luci-app-mtk-easymesh.
+#
+# The mtwifi-wapp package brings wapp up through its iface hotplug script
+# (100-startwapp -> startwapp.sh), which decides the wapp interfaces from
+# hard-coded MT798x radio section names (MT7981_1_1 / MT7986_1_1). On devices
+# whose wireless sections are named differently that script silently declines
+# and wapp never comes up after a reboot. This service waits for the network,
+# checks whether wapp is running and - only if it is not - starts it the same
+# way the LuCI panel does, deriving the interfaces from the live mtwifi radios.
+
+START=99
+
+boot() {
+	start
+}
+
+start() {
+	[ "$(uci -q get easymesh.config.enabled)" = "1" ] || return 0
+
+	# run in the background so the boot sequence is never blocked
+	(
+		ubus -t 120 wait_for network.interface.lan 2>/dev/null
+
+		# give the firmware's own hotplug (100-startwapp / SDK init) time
+		# to bring wapp up first; only act when it did not
+		sleep 15
+
+		pidof wapp wappd >/dev/null 2>&1 && exit 0
+
+		wapp_bin=""
+		for p in /sbin/wapp /usr/sbin/wapp /usr/bin/wapp; do
+			[ -x "$p" ] && wapp_bin="$p" && break
+		done
+		[ -n "$wapp_bin" ] || exit 0
+
+		# derive the main AP interface of every enabled mtwifi radio,
+		# exactly like the LuCI backend (band 5g/6g -> rax<idx>, else ra<idx>)
+		ifaces=""
+		for dev in $(uci -q show wireless 2>/dev/null | sed -n 's/^wireless\.\([^.]*\)=wifi-device$/\1/p'); do
+			[ "$(uci -q get wireless.$dev.type)" = "mtwifi" ] || continue
+			[ "$(uci -q get wireless.$dev.disabled)" = "1" ] && continue
+			band="$(uci -q get wireless.$dev.band)"
+			idx="$(uci -q get wireless.$dev.ifidx)"
+			idx="${idx:-0}"
+			case "$band" in
+				5g|5G|6g) ifn="rax$idx" ;;
+				*) case "$dev" in
+					*_2) ifn="rax$idx" ;;
+					*)   ifn="ra$idx" ;;
+				   esac ;;
+			esac
+			case " $ifaces " in
+				*" $ifn "*) ;;
+				*) ifaces="$ifaces $ifn" ;;
+			esac
+		done
+		[ -n "$ifaces" ] || exit 0
+
+		# the 1905 ALIDs must match the br-lan MAC before the daemons come up
+		br_mac="$(cat /sys/class/net/br-lan/address 2>/dev/null)"
+		if [ -n "$br_mac" ] && [ -f /etc/map/1905d.cfg ]; then
+			sed -i "s/map_controller_alid=.*/map_controller_alid=${br_mac}/g" /etc/map/1905d.cfg
+			sed -i "s/map_agent_alid=.*/map_agent_alid=${br_mac}/g" /etc/map/1905d.cfg
+		fi
+
+		logger -t "mtk-easymesh" "boot fallback: starting wapp on:$ifaces"
+
+		args=""
+		for ifn in $ifaces; do
+			args="$args -c$ifn"
+		done
+		"$wapp_bin" -d1 -v2 $args >/dev/null 2>&1 &
+		sleep 1
+
+		# driver level MAP setup, mirroring startwapp.sh
+		for ifn in $ifaces; do
+			iwpriv "$ifn" set mapR2Enable=0
+			iwpriv "$ifn" set mapTSEnable=0
+			iwpriv "$ifn" set mapR3Enable=0
+			iwpriv "$ifn" set DppEnable=0
+			iwpriv "$ifn" set mapEnable=2
+		done
+
+		for p in /sbin/bs20 /usr/sbin/bs20 /usr/bin/bs20; do
+			if [ -x "$p" ]; then
+				"$p" >/dev/null 2>&1 &
+				break
+			fi
+		done
+	) &
+	return 0
+}
+
+stop() {
+	killall bs20 2>/dev/null
+	killall wapp 2>/dev/null
+	return 0
+}

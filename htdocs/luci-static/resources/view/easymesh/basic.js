@@ -279,6 +279,12 @@ function renderStatusCard(cfg, status) {
 		E('td', { 'class': 'td left' }, radioNames ? '%d (%s)'.format(radios.length, radioNames) : '-')
 	]));
 
+	if (status.last_error)
+		rows.push(E('tr', { 'class': 'tr' }, [
+			E('td', { 'class': 'td left' }, [ E('strong', {}, _('Last Startup Error')) ]),
+			E('td', { 'class': 'td left' }, E('code', { 'style': 'white-space:pre-wrap;word-break:break-all' }, status.last_error))
+		]));
+
 	return E('div', { 'class': 'cbi-section' }, [
 		E('h3', {}, _('Status Overview')),
 		E('table', { 'class': 'table' }, rows)
@@ -325,9 +331,14 @@ function checkDaemonHealth(enabled, done) {
 	}
 	setTimeout(function() {
 		L.resolveDefault(callGetStatus(), {}).then(function(status) {
-			if (status && !status.wapp_running)
-				ui.addNotification(null, E('p', { 'class': 'alert-message error' },
-					_('wapp is still not running. Check that an EasyMesh daemon set is installed (mtwifi-wapp: wapp / bs20 / startwapp.sh in /sbin, or the MTK SDK set: /etc/init.d/wapp with wapp / p1905_managerd / mapd) and inspect the system log: logread | grep -e wapp -e bs20 -e 1905 -e mapd.')));
+			if (status && !status.wapp_running) {
+				var msg;
+				if (status.last_error)
+					msg = _('wapp is still not running. Last startup attempt failed: %s. Also inspect the system log: logread | grep -e wapp -e bs20 -e 1905.').format(status.last_error);
+				else
+					msg = _('wapp is still not running. Check that an EasyMesh daemon set is installed (mtwifi-wapp: wapp / bs20 / startwapp.sh in /sbin, or the MTK SDK set: /etc/init.d/wapp with wapp / p1905_managerd / mapd) and inspect the system log: logread | grep -e wapp -e bs20 -e 1905 -e mapd.');
+				ui.addNotification(null, E('p', { 'class': 'alert-message error' }, msg));
+			}
 			if (done) done();
 		});
 	}, 3000);

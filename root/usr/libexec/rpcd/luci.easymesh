@@ -46,6 +46,18 @@ local MAPD_NAMES = { "mapd" }
 -- procd services of the SDK layout, stopped/started via /etc/init.d/<svc>
 local SDK_INITS = { "easymesh", "wapp" }
 
+-- last startup failure reason, surfaced to the frontend through getStatus
+-- so the panel can show why wapp did not come up instead of a generic error
+local STATE_ERROR = "/tmp/luci-easymesh.start_error"
+
+local function set_start_error(msg)
+	if msg and msg ~= "" then
+		fs.writefile(STATE_ERROR, msg)
+	else
+		os.remove(STATE_ERROR)
+	end
+end
+
 -- backup file format version written into the backup header
 local BACKUP_VERSION = 1
 
@@ -494,20 +506,34 @@ end
 -- ---------------------------------------------------------------------------
 -- daemon control. stop every known alias, then bring EasyMesh back up
 -- using whatever this firmware provides:
---   1. the firmware startwapp.sh (mtwifi-wapp) when present - it also
---      performs the driver level iwpriv MAP setup;
---   2. the closed-source MTK SDK EasyMesh set (wapp / 1905daemon / mapd
+--   1. the closed-source MTK SDK EasyMesh set (wapp / 1905daemon / mapd
 --      packages): procd init scripts /etc/init.d/wapp and
 --      /etc/init.d/easymesh run the whole bring-up sequence (driver
 --      setup, uci2map, daemon launch) - always preferred over a
 --      hand-rolled start on that layout;
---   3. a direct "wapp -d1 -v2 -c<ifaces>" + bs20 start as last resort,
---      because startwapp.sh decides from hardcoded MT798x UCI section
---      names (MT7986_1_1 / default_MT7986_1_2 ...) and silently declines
---      ("no interface requires wapp start") on devices whose radio
---      sections are named differently, which used to leave wapp down
---      even though the panel reported success.
+--   2. the firmware startwapp.sh (mtwifi-wapp) - only when the hard-coded
+--      MT798x radio section names it decides from actually exist on this
+--      device, otherwise it silently declines and wapp stays down;
+--   3. a direct "wapp -d1 -v2 -c<ifaces>" + bs20 start derived from the
+--      live mtwifi radios, which works on every section naming / firmware
+--      combination and therefore never silently fails.
 -- ---------------------------------------------------------------------------
+
+-- startwapp.sh of the mtwifi-wapp package decides which radios wapp runs
+-- on from hard-coded wifi-device section names (MT7981_1_1 / MT7986_1_1).
+-- It is only trustworthy on devices whose radios are actually named that
+-- way; anywhere else it exits with "no interface requires wapp start".
+local STARTWAPP_SECTIONS = { "MT7981_1_1", "MT7986_1_1" }
+
+local function startwapp_sections_present()
+	local cursor = uci.cursor()
+	for _, name in ipairs(STARTWAPP_SECTIONS) do
+		if cursor:get("wireless", name, "type") == "mtwifi" then
+			return true
+		end
+	end
+	return false
+end
 
 -- daemons must survive the rpcd call that started them
 local function run_bg(cmd)
@@ -641,25 +667,44 @@ local function restart_daemons(enabled)
 				c:commit("wapp")
 			end
 		end
+		set_start_error(nil)
 		return true, "stopped"
 	end
 
-	local sh = find_tool("startwapp.sh")
-	if sh then
-		run(sh)
-		if any_running(WAPP_NAMES) then
-			return true, "startwapp.sh"
-		end
-		-- startwapp.sh ran but did not bring wapp up (its hardcoded UCI
-		-- section heuristics declined); fall through to the SDK init path
+	-- 1. SDK layout: the firmware's own procd init scripts run the whole
+	--    bring-up sequence and are the canonical entry point there
+	local ok_sdk, via_sdk = start_daemons_sdk()
+	if ok_sdk then
+		set_start_error(nil)
+		return true, via_sdk
 	end
 
-	local ok_sdk, via_sdk = start_daemons_sdk()
-	if ok_sdk then return true, via_sdk end
+	-- 2. firmware startwapp.sh: performs the full official bring-up
+	--    (ALID rewrite, driver iwpriv MAP setup, bs20, MBO reset), but it
+	--    decides the wapp interfaces from hard-coded MT798x section names,
+	--    so only run it when those sections exist on this device
+	if startwapp_sections_present() then
+		local sh = find_tool("startwapp.sh")
+		if sh then
+			run(sh)
+			if any_running(WAPP_NAMES) then
+				set_start_error(nil)
+				return true, "startwapp.sh"
+			end
+			via_sdk = via_sdk .. "; startwapp.sh ran but did not bring wapp up"
+		end
+	end
 
+	-- 3. direct start derived from the live mtwifi radios: the fallback
+	--    that works on every device regardless of section naming
 	local ok_direct, via_direct = start_daemons_direct()
-	if ok_direct then return true, via_direct end
+	if ok_direct then
+		set_start_error(nil)
+		return true, via_direct
+	end
 
+	-- nothing worked: remember why so the panel can show the real reason
+	set_start_error(via_sdk .. "; " .. via_direct)
 	return false, via_sdk .. "; " .. via_direct
 end
 
@@ -949,6 +994,7 @@ local methods = {
 			local status = {
 				wapp_running = any_running(WAPP_NAMES),
 				bs20_running = any_running(BS20_NAMES),
+				last_error = readfile(STATE_ERROR) or "",
 				al_mac = br_mac(),
 				map_ver = kv_get(MAP1905, "map_ver") or "",
 				device_role = current_role(),
