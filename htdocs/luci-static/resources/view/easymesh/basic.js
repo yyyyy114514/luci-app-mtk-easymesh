@@ -651,6 +651,12 @@ return view.extend({
 				var cfg = data[1] || {};
 				return L.resolveDefault(callApplyConfig(), {}).then(function(res) {
 					var msg;
+					if (!res || res.ok !== true) {
+						ui.addNotification(null, E('p', { 'class': 'alert-message error' },
+							_('The apply RPC call failed%s. The LuCI backend (rpcd) may not have loaded the plugin - please reinstall the package then check "ubus list luci.easymesh" on the device.').format(
+								(res && res.error) ? (': ' + res.error) : '')));
+						return;
+					}
 					if (res.enabled != '1')
 						msg = _('EasyMesh has been disabled. Note: band steering and 802.11r are also disabled on the radios to keep wapp stopped.');
 					else if (res.restarted)
