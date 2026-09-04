@@ -967,14 +967,27 @@ local methods = {
 
 			-- live values as currently present in the config files,
 			-- used by the frontend to detect unapplied changes
+			--
+			-- ctrl_alid / agent_alid are excluded from the drift check: they are
+			-- expert ALID overrides whose empty default auto-resolves to the
+			-- br-lan MAC (written into 1905d.cfg on apply). Comparing empty
+			-- against the resolved MAC would permanently flag a spurious drift,
+			-- so they never enter cfg.live.
 			cfg.live = {}
 			for _, e in ipairs(MAP_SCHEMA) do
-				if cfg[e.u] == nil then
-					cfg[e.u] = cursor:get("easymesh", "config", e.u) or e.d
+				if e.u ~= "ctrl_alid" and e.u ~= "agent_alid" then
+					if cfg[e.u] == nil then
+						cfg[e.u] = cursor:get("easymesh", "config", e.u) or e.d
+					end
+					cfg.live[e.u] = kv_get(e.f, e.k)
+					if cfg.live[e.u] == nil then cfg.live[e.u] = e.d end
 				end
-				cfg.live[e.u] = kv_get(e.f, e.k)
-				if cfg.live[e.u] == nil then cfg.live[e.u] = e.d end
 			end
+			-- still expose the effective ALIDs (resolved / override) for display
+			cfg.ctrl_alid = cursor:get("easymesh", "config", "ctrl_alid")
+				or kv_get(MAP1905, "map_controller_alid") or ""
+			cfg.agent_alid = cursor:get("easymesh", "config", "agent_alid")
+				or kv_get(MAP1905, "map_agent_alid") or ""
 
 			cfg.cur_mode = current_mode()
 			cfg.cur_role = current_role()
