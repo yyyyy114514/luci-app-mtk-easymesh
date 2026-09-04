@@ -159,8 +159,8 @@ jobs:
         if: ${{ !cancelled() && github.event.inputs.upload_release == 'yes' }}
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: luci-app-mtk-easymesh-${{ steps.version.outputs.build_version }}
-          name: luci-app-mtk-easymesh ${{ steps.version.outputs.build_version }}
+          tag_name: ${{ steps.version.outputs.build_version }}
+          name: ${{ steps.version.outputs.build_version }}
           body: |
             ## luci-app-mtk-easymesh — MTK EasyMesh (MAP / wapp) 面板
 
