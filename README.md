@@ -1,3 +1,5 @@
+# 此项目已弃用，全新的luci-app-mtk-dash2马上来！
+
 # luci-app-mtk-easymesh
 
 > 反馈：https://www.right.com.cn/forum/forum.php?mod=viewthread&tid=8487526  （如没有恩山账号提issues也行）
